@@ -1,5 +1,3 @@
-# The Craft License
-
 Copyright © pixelwerft GmbH
 
 Permission is hereby granted to any person obtaining a copy of this software
