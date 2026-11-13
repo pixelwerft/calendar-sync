@@ -1,0 +1,24 @@
+{# Settings of both dashboard widgets: which calendar, and for the events widget the view it opens with. #}
+{% import '_includes/forms' as forms %}
+
+{% set options = [{ value: '', label: 'All calendars'|t('calendar-sync') }] %}
+{% for calendar in calendars %}
+  {% set options = options|merge([{ value: calendar.handle, label: calendar.name }]) %}
+{% endfor %}
+
+{{ forms.selectField({
+  label: 'Calendar'|t('calendar-sync'),
+  id: 'calendar', name: 'calendar', value: widget.calendar ?? '', options: options,
+}) }}
+
+{% if views %}
+  {% set viewOptions = [] %}
+  {% for value, label in views %}
+    {% set viewOptions = viewOptions|merge([{ value: value, label: label }]) %}
+  {% endfor %}
+  {{ forms.selectField({
+    label: 'Opens with'|t('calendar-sync'),
+    instructions: 'The view can be changed in the widget at any time.'|t('calendar-sync'),
+    id: 'view', name: 'view', value: widget.view, options: viewOptions,
+  }) }}
+{% endif %}

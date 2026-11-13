@@ -1,0 +1,117 @@
+{# The synced calendars: where each one comes from, which way it syncs, how often, and how the last run ended. #}
+{% extends '_layouts/cp' %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set title = 'Calendars'|t('calendar-sync') %}
+{% set selectedSubnavItem = 'calendars' %}
+
+{% block actionButton %}
+  {% if canSync and calendars|length %}
+    <form method="post" accept-charset="UTF-8">
+      {{ csrfInput() }}
+      {{ actionInput('calendar-sync/calendars/sync') }}
+      {{ redirectInput('calendar-sync/calendars') }}
+      <button type="submit" class="btn" data-icon="refresh">{{ 'Sync all now'|t('calendar-sync') }}</button>
+    </form>
+  {% endif %}
+  {% if canManage and connections|length %}
+    <a class="btn submit add icon" href="{{ url('calendar-sync/calendars/new') }}">{{ 'New calendar'|t('calendar-sync') }}</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="cs">
+    {% if not calendars|length %}
+      <div class="cs-empty">
+        <h2>{{ 'Three steps to the first synced calendar'|t('calendar-sync') }}</h2>
+        <ol class="cs-steps">
+          <li class="{{ connections|length ? 'cs-done' }}">
+            <strong>{{ 'Connect an account'|t('calendar-sync') }}</strong>
+            <span class="light">{{ 'Sign in to Google or Microsoft, or enter the address of a CalDAV server.'|t('calendar-sync') }}</span>
+            {% if canConnect %}<a class="btn small" href="{{ url('calendar-sync/settings') }}">{{ connections|length ? 'Connections'|t('calendar-sync') : 'Add a connection'|t('calendar-sync') }}</a>{% endif %}
+          </li>
+          <li>
+            <strong>{{ 'Choose a calendar'|t('calendar-sync') }}</strong>
+            <span class="light">{{ 'Pick one of the calendars of the account, the direction and how often it is synced.'|t('calendar-sync') }}</span>
+            {% if canManage and connections|length %}<a class="btn small submit" href="{{ url('calendar-sync/calendars/new') }}">{{ 'New calendar'|t('calendar-sync') }}</a>{% endif %}
+          </li>
+          <li>
+            <strong>{{ 'Map it to your entries'|t('calendar-sync') }}</strong>
+            <span class="light">{{ 'Choose a section and say which field holds the start, the end, the location … – or let the plugin create an example section. Without a section the events are simply kept and can be shown with Twig.'|t('calendar-sync') }}</span>
+          </li>
+        </ol>
+      </div>
+    {% else %}
+      <table class="data fullwidth cs-table">
+        <thead>
+          <tr>
+            <th scope="col">{{ 'Name'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Connection'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Direction'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Entries'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Interval'|t('calendar-sync') }}</th>
+            <th scope="col" class="cs-num">{{ 'Events'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Last sync'|t('calendar-sync') }}</th>
+            <th scope="col"><span class="visually-hidden">{{ 'Actions'|t('calendar-sync') }}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for calendar in calendars %}
+            {% set connection = calendar.connection %}
+            {% set section = calendar.section %}
+            <tr>
+              <th scope="row">
+                <span class="cs-dot" style="{{ calendar.color ? 'background:' ~ calendar.color }}"></span>
+                {% if canManage %}<a href="{{ calendar.cpEditUrl }}">{{ calendar.name }}</a>{% else %}{{ calendar.name }}{% endif %}
+                <div class="light code small">{{ calendar.handle }}</div>
+              </th>
+              <td>
+                {% if connection %}
+                  {{ connection.providerName }}
+                  <div class="light small">{{ calendar.remoteName ?: connection.account }}</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if not calendar.enabled %}
+                  <span class="cs-pill">{{ 'Paused'|t('calendar-sync') }}</span>
+                {% elseif calendar.direction == 'import' %}
+                  <span class="cs-pill cs-pill-on" title="{{ 'Events of the calendar come to Craft'|t('calendar-sync') }}">{{ 'Calendar → Craft'|t('calendar-sync') }}</span>
+                {% elseif calendar.direction == 'export' %}
+                  <span class="cs-pill cs-pill-on" title="{{ 'Entries go to the calendar'|t('calendar-sync') }}">{{ 'Craft → Calendar'|t('calendar-sync') }}</span>
+                {% else %}
+                  <span class="cs-pill cs-pill-on" title="{{ 'Changes go both ways'|t('calendar-sync') }}">{{ 'Calendar ↔ Craft'|t('calendar-sync') }}</span>
+                {% endif %}
+              </td>
+              <td>{% if section %}{{ section.name|t('site') }}{% else %}<span class="light">{{ 'Events only'|t('calendar-sync') }}</span>{% endif %}</td>
+              <td>
+                {{ (intervals[calendar.syncInterval] ?? 'Only manually')|t('calendar-sync') }}
+                {% if calendar.syncInterval and not autoSync %}<div class="light small">{{ 'by cron job'|t('calendar-sync') }}</div>{% endif %}
+              </td>
+              <td class="cs-num"><a href="{{ url('calendar-sync/events', { calendar: calendar.handle, period: 'all' }) }}">{{ counts[calendar.id]|number }}</a></td>
+              <td>
+                {% if calendar.lastSyncedAt %}
+                  <span class="status {{ calendar.lastSyncStatus == 'ok' ? 'live' : 'expired' }}"></span>
+                  <span title="{{ calendar.lastSyncedAt|datetime('medium') }}">{{ calendar.lastSyncedAt|timestamp('short') }}</span>
+                  {% if calendar.lastSyncSummary %}<div class="small cs-message {{ calendar.lastSyncStatus == 'ok' ? 'light' : 'error' }}">{{ calendar.lastSyncSummary|nl2br }}</div>{% endif %}
+                {% else %}
+                  <span class="status"></span> <span class="light">{{ 'Not synced yet'|t('calendar-sync') }}</span>
+                {% endif %}
+              </td>
+              <td class="thin">
+                {% if canSync and calendar.enabled %}
+                  <form method="post" accept-charset="UTF-8">
+                    {{ csrfInput() }}
+                    {{ actionInput('calendar-sync/calendars/sync') }}
+                    {{ redirectInput('calendar-sync/calendars') }}
+                    {{ hiddenInput('calendarId', calendar.id) }}
+                    <button type="submit" class="btn small" data-icon="refresh">{{ 'Sync now'|t('calendar-sync') }}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{# Dashboard widget: the numbers. #}
+<div class="csw csw-counter">
+  <dl class="csw-tiles">
+    {% if not single %}
+      <div class="csw-tile">
+        <dt>{{ 'Calendars'|t('calendar-sync') }}</dt>
+        <dd><a href="{{ url('calendar-sync/calendars') }}">{{ calendarCount|number }}</a></dd>
+      </div>
+    {% endif %}
+    <div class="csw-tile">
+      <dt>{{ 'Events'|t('calendar-sync') }}</dt>
+      <dd><a href="{{ url('calendar-sync/events', { period: 'all', calendar: single ? single.handle : null }) }}">{{ eventCount|number }}</a></dd>
+    </div>
+    <div class="csw-tile">
+      <dt>{{ 'Today'|t('calendar-sync') }}</dt>
+      <dd>{{ todayCount|number }}</dd>
+    </div>
+    <div class="csw-tile">
+      <dt>{{ 'Next 7 days'|t('calendar-sync') }}</dt>
+      <dd>{{ weekCount|number }}</dd>
+    </div>
+    <div class="csw-tile">
+      <dt>{{ 'Running and coming'|t('calendar-sync') }}</dt>
+      <dd>{{ upcomingCount|number }}</dd>
+    </div>
+  </dl>
+  <p class="csw-foot light">
+    {% if failed %}
+      <span class="status expired"></span>{{ '{n, plural, =1{# calendar needs attention} other{# calendars need attention}}'|t('calendar-sync', { n: failed }) }} ·
+    {% endif %}
+    {% if lastSync %}
+      {{ 'Last sync'|t('calendar-sync') }}: {{ lastSync|timestamp('short') }}
+    {% else %}
+      {{ 'Not synced yet'|t('calendar-sync') }}
+    {% endif %}
+  </p>
+</div>

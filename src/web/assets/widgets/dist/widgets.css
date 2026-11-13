@@ -1,0 +1,88 @@
+/* Calendar Sync – dashboard widgets. Tokens live on .csw; everything else refers to them. The layout follows the
+   width of the widget (container queries), not of the window: a widget can be one column wide or four. */
+.csw {
+  --csw-accent: #203345;
+  --csw-border: var(--hairline-color, #e3e5e8);
+  --csw-muted-bg: var(--gray-050, #f3f7fc);
+  --csw-muted: var(--gray-600, #596673);
+  --csw-today: #cf1124;
+  --csw-radius: 6px;
+  container-type: inline-size;
+}
+
+/* numbers */
+.csw-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 0; }
+.csw-tile { padding: 10px 12px; border: 1px solid var(--csw-border); border-radius: var(--csw-radius); background: var(--csw-muted-bg); }
+.csw-tile dt { color: var(--csw-muted); font-size: 12px; }
+.csw-tile dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.csw-foot { margin: 10px 0 0; font-size: 12px; }
+
+/* events: bar */
+.csw-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 12px; }
+.csw-nav { display: flex; gap: 4px; }
+.csw-title { flex: 1 1 8rem; }
+.csw-body { min-height: 3rem; transition: opacity 0.15s; }
+.csw-body.csw-loading { opacity: 0.5; }
+.csw-none { margin: 0; }
+
+/* events: lists */
+.csw-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.csw-event { display: grid; grid-template-columns: 10px minmax(0, max-content) minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.csw-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--csw-accent); }
+.csw-time { color: var(--csw-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.csw-what { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.csw-where { font-size: 12px; }
+.csw-tentative .csw-what { font-style: italic; }
+
+/* events: week */
+.csw-week { display: grid; gap: 12px; }
+.csw-day h3 { margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--csw-border); font-size: 13px; }
+.csw-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.csw-link:hover, .csw-link:focus-visible { text-decoration: underline; }
+.csw-day.csw-today h3 { border-bottom-color: var(--csw-today); color: var(--csw-today); }
+@container (min-width: 760px) {
+  .csw-week { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+  .csw-week .csw-event { grid-template-columns: 10px minmax(0, 1fr); row-gap: 0; }
+  .csw-week .csw-time { grid-column: 2; }
+  .csw-week .csw-what { grid-column: 2; }
+}
+
+/* events: month */
+.csw-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.csw-weekday { padding: 0 2px 4px; color: var(--csw-muted); font-size: 11px; text-align: center; }
+.csw-cell {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  min-height: 44px;
+  padding: 3px;
+  border: 1px solid var(--csw-border);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.csw-cell:hover, .csw-cell:focus-visible { background: var(--csw-muted-bg); }
+.csw-other { opacity: 0.45; }
+.csw-number { font-size: 12px; font-variant-numeric: tabular-nums; }
+.csw-today .csw-number { color: var(--csw-today); font-weight: 700; }
+.csw-chips { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; min-width: 0; }
+.csw-chip { width: 7px; height: 7px; border-radius: 50%; background: var(--csw-color, var(--csw-accent)); }
+.csw-chip-text { display: none; }
+.csw-more { color: var(--csw-muted); font-size: 10px; }
+@container (min-width: 560px) {
+  .csw-cell { min-height: 78px; padding: 4px 5px; }
+  .csw-chips { display: grid; gap: 2px; }
+  .csw-chip {
+    width: auto;
+    height: auto;
+    padding: 0 4px;
+    border-radius: 3px;
+    border-left: 3px solid var(--csw-color, var(--csw-accent));
+    background: var(--csw-muted-bg);
+    overflow: hidden;
+  }
+  .csw-chip-text { display: block; overflow: hidden; font-size: 11px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+}

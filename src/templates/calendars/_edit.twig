@@ -1,0 +1,370 @@
+{# One calendar: which calendar of which connection, how it is synced, which entries and fields it is mapped to, and
+   how it is presented. The script of the asset bundle fills the selects that depend on each other. #}
+{% extends '_layouts/cp' %}
+{% import '_includes/forms' as forms %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set fullPageForm = true %}
+{% set selectedSubnavItem = 'calendars' %}
+{% set title = calendar.id ? calendar.name : 'New calendar'|t('calendar-sync') %}
+{% set crumbs = [
+  { label: 'Calendar Sync'|t('calendar-sync'), url: url('calendar-sync') },
+  { label: 'Calendars'|t('calendar-sync'), url: url('calendar-sync/calendars') },
+] %}
+
+{% set connectionOptions = [] %}
+{% set connectionAccess = {} %}
+{% for connection in connections %}
+  {% set connectionAccess = connectionAccess|merge({ ('c' ~ connection.id): { canWrite: connection.canWrite(), busy: connection.isBusyOnly } }) %}
+  {% set connectionOptions = connectionOptions|merge([{
+    value: connection.id,
+    label: connection.name ~ ' (' ~ connection.providerName ~ (connection.isConnected ? '' : ' – ' ~ 'not connected'|t('calendar-sync')) ~ ')',
+  }]) %}
+{% endfor %}
+
+{% set intervalOptions = [] %}
+{% for minutes, label in intervals %}
+  {% set intervalOptions = intervalOptions|merge([{ value: minutes, label: label|t('calendar-sync') }]) %}
+{% endfor %}
+
+{% block content %}
+  {{ actionInput('calendar-sync/calendars/save') }}
+  {{ redirectInput('calendar-sync/calendars') }}
+  {% if calendar.id %}{{ hiddenInput('calendarId', calendar.id) }}{% endif %}
+
+  <div class="cs" id="cs-calendar-form">
+
+    {% if not connections|length %}
+      <aside class="cs-callout cs-callout-warn" role="note">
+        {{ 'There is no connection yet. A calendar needs one.'|t('calendar-sync') }}
+        <a href="{{ url('calendar-sync/settings') }}">{{ 'Add a connection'|t('calendar-sync') }}</a>
+      </aside>
+    {% endif %}
+
+    <h2>{{ 'Calendar'|t('calendar-sync') }}</h2>
+
+    {{ forms.selectField({
+      label: 'Connection'|t('calendar-sync'),
+      instructions: 'The account the calendar belongs to.'|t('calendar-sync'),
+      id: 'connectionId', name: 'connectionId', required: true,
+      options: [{ value: '', label: 'Choose …'|t('calendar-sync') }]|merge(connectionOptions),
+      value: calendar.connectionId,
+      errors: calendar.getErrors('connectionId'),
+    }) }}
+
+    {% set remoteInput %}
+      <div class="flex">
+        <div class="select">
+          <select id="remoteId" name="remoteId" data-value="{{ calendar.remoteId }}">
+            {% if calendar.remoteId %}
+              <option value="{{ calendar.remoteId }}" selected>{{ calendar.remoteName ?: calendar.remoteId }}</option>
+            {% else %}
+              <option value="">{{ 'Choose a connection first'|t('calendar-sync') }}</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="spinner hidden" id="cs-remote-spinner"></div>
+        <button type="button" class="btn small" id="cs-remote-reload" data-icon="refresh">{{ 'Load again'|t('calendar-sync') }}</button>
+      </div>
+      <p class="error hidden" id="cs-remote-error"></p>
+      {{ hiddenInput('remoteName', calendar.remoteName, { id: 'remoteName' }) }}
+      {{ hiddenInput('timezone', calendar.timezone, { id: 'timezone' }) }}
+    {% endset %}
+    {{ forms.field({
+      label: 'Calendar of the account'|t('calendar-sync'),
+      instructions: 'The calendars the account can see. A calendar marked «read only» can only be synced towards Craft.'|t('calendar-sync'),
+      id: 'remoteId', required: true,
+      errors: calendar.getErrors('remoteId'),
+    }, remoteInput) }}
+
+    {{ forms.textField({
+      label: 'Name'|t('calendar-sync'),
+      instructions: 'What this calendar is called in Craft.'|t('calendar-sync'),
+      id: 'name', name: 'name', required: true, first: true,
+      value: calendar.name, errors: calendar.getErrors('name'),
+    }) }}
+
+    {{ forms.textField({
+      label: 'Handle'|t('calendar-sync'),
+      instructions: 'How templates refer to this calendar: {code}'|t('calendar-sync', { code: "craft.calendarSync.events().calendar('handle')" }),
+      id: 'handle', name: 'handle', required: true, class: 'code', autocorrect: false, autocapitalize: false,
+      value: calendar.handle, errors: calendar.getErrors('handle'),
+    }) }}
+
+    {{ forms.colorField({
+      label: 'Colour'|t('calendar-sync'),
+      instructions: 'The colour of this calendar in lists, widgets, feeds and templates. A new calendar takes the colour it has at the provider.'|t('calendar-sync'),
+      id: 'color', name: 'color',
+      value: calendar.color, errors: calendar.getErrors('color'),
+    }) }}
+
+    <hr>
+    <h2>{{ 'Sync'|t('calendar-sync') }}</h2>
+
+    {{ forms.lightswitchField({
+      label: 'Sync this calendar'|t('calendar-sync'),
+      instructions: 'Switched off, the calendar is paused: nothing is read and nothing is written. What was synced so far stays.'|t('calendar-sync'),
+      id: 'enabled', name: 'enabled', on: calendar.enabled,
+    }) }}
+
+    {{ forms.selectField({
+      label: 'Direction'|t('calendar-sync'),
+      id: 'direction', name: 'direction', value: calendar.direction,
+      options: [
+        { value: 'import', label: 'Calendar → Craft: events of the calendar come to Craft'|t('calendar-sync') },
+        { value: 'export', label: 'Craft → Calendar: entries of a section go to the calendar'|t('calendar-sync') },
+        { value: 'both', label: 'Both ways: changes on either side reach the other'|t('calendar-sync') },
+      ],
+      errors: calendar.getErrors('direction'),
+    }) }}
+    <p class="light hidden" id="cs-direction-note">{{ 'This connection only reads, so events only come to Craft.'|t('calendar-sync') }}</p>
+    <p class="light hidden" id="cs-busy-note">{{ 'This connection only shows busy times: Craft keeps when something takes place, not what.'|t('calendar-sync') }}</p>
+
+    {{ forms.selectField({
+      label: 'How often'|t('calendar-sync'),
+      instructions: 'How much time passes between two runs. «Only manually» leaves it to the «Sync now» button and the console command.'|t('calendar-sync'),
+      id: 'syncInterval', name: 'syncInterval', value: calendar.syncInterval,
+      options: intervalOptions,
+      errors: calendar.getErrors('syncInterval'),
+    }) }}
+
+    <div class="cs-pair">
+      {{ forms.textField({
+        label: 'Days back'|t('calendar-sync'),
+        instructions: 'How far into the past events are synced.'|t('calendar-sync'),
+        id: 'pastDays', name: 'pastDays', type: 'number', min: 0, max: 3650, size: 6,
+        value: calendar.pastDays, errors: calendar.getErrors('pastDays'),
+      }) }}
+      {{ forms.textField({
+        label: 'Days ahead'|t('calendar-sync'),
+        instructions: 'How far into the future. 365 is a year.'|t('calendar-sync'),
+        id: 'futureDays', name: 'futureDays', type: 'number', min: 0, max: 3650, size: 6,
+        value: calendar.futureDays, errors: calendar.getErrors('futureDays'),
+      }) }}
+    </div>
+
+    <hr>
+    <h2>{{ 'Entries and fields'|t('calendar-sync') }}</h2>
+    <p class="light cs-lead">{{ 'Events can become entries of one of your sections – and entries can become events. Say which field of the entry holds what. Without a section the events are kept by the plugin and can still be shown with Twig and the feeds.'|t('calendar-sync') }}</p>
+
+    {% set sectionInput %}
+      <div class="flex">
+        <div class="select">
+          <select id="sectionId" name="sectionId" data-value="{{ calendar.sectionId }}"></select>
+        </div>
+        {% if blueprint.canInstall %}
+          <button type="button" class="btn small" id="cs-blueprint" data-icon="wand">{{ blueprint.exists ? 'Use the example section'|t('calendar-sync') : 'Create an example section'|t('calendar-sync') }}</button>
+          <div class="spinner hidden" id="cs-blueprint-spinner"></div>
+        {% endif %}
+      </div>
+      {% if blueprint.canInstall %}
+        <p class="light small">{{ 'The example is a section «Calendar events» with fields for start, end, all day, location, description and link – created and mapped with one click. Use it as it is, or as a pattern for your own.'|t('calendar-sync') }}</p>
+      {% endif %}
+    {% endset %}
+    {{ forms.field({
+      label: 'Section'|t('calendar-sync'),
+      id: 'sectionId',
+      errors: calendar.getErrors('sectionId'),
+    }, sectionInput) }}
+
+    <div id="cs-entries" class="hidden">
+      {% set typeInput %}
+        <div class="select"><select id="entryTypeId" name="entryTypeId" data-value="{{ calendar.entryTypeId }}"></select></div>
+      {% endset %}
+      {{ forms.field({
+        label: 'Entry type'|t('calendar-sync'),
+        id: 'entryTypeId',
+        errors: calendar.getErrors('entryTypeId'),
+      }, typeInput) }}
+
+      {% if sites|length > 1 %}
+        {{ forms.selectField({
+          label: 'Site'|t('calendar-sync'),
+          instructions: 'The site whose content is read and written.'|t('calendar-sync'),
+          id: 'siteId', name: 'siteId', value: calendar.siteId, options: sites,
+        }) }}
+      {% endif %}
+
+      {% set mappingInput %}
+        <table class="data cs-mapping">
+          <thead>
+            <tr>
+              <th scope="col">{{ 'Of the event'|t('calendar-sync') }}</th>
+              <th scope="col"><span class="visually-hidden">{{ 'belongs to'|t('calendar-sync') }}</span></th>
+              <th scope="col">{{ 'Field of the entry'|t('calendar-sync') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for attribute, info in attributes %}
+              <tr data-attribute="{{ attribute }}" data-read-only="{{ info.readOnly ? 1 : 0 }}">
+                <th scope="row">
+                  <label for="mapping-{{ attribute }}">{{ info.label }}{% if info.required %} <span class="required" aria-hidden="true"></span>{% endif %}</label>
+                  {% if info.instructions %}<div class="light small">{{ info.instructions }}</div>{% endif %}
+                </th>
+                <td class="cs-arrow" aria-hidden="true">{{ info.readOnly ? '→' : '↔' }}</td>
+                <td>
+                  <div class="select">
+                    <select id="mapping-{{ attribute }}" name="mapping[{{ attribute }}]" data-value="{{ calendar.mapping[attribute] ?? '' }}"></select>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="light small">{{ 'Only fields that can hold the value are offered: date fields for start and end, a lightswitch for «all day», text and link fields for the rest. What is not mapped is left alone on both sides.'|t('calendar-sync') }}</p>
+      {% endset %}
+      {{ forms.field({
+        label: 'Field mapping'|t('calendar-sync'),
+        id: 'mapping',
+        errors: calendar.getErrors('mapping'),
+      }, mappingInput) }}
+
+      {{ forms.textField({
+        label: 'Prefix for entries'|t('calendar-sync'),
+        instructions: 'Put in front of the title of every entry made from an event of this calendar, e.g. «Team:». It is left out again when an entry goes to the calendar.'|t('calendar-sync'),
+        id: 'entryPrefix', name: 'entryPrefix', maxlength: 100, size: 30,
+        value: calendar.entryPrefix, errors: calendar.getErrors('entryPrefix'),
+      }) }}
+
+      <div id="cs-conflict" class="hidden">
+        {{ forms.selectField({
+          label: 'If both sides changed'|t('calendar-sync'),
+          instructions: 'An event and its entry were both changed since the last run.'|t('calendar-sync'),
+          id: 'conflictWinner', name: 'conflictWinner', value: calendar.conflictWinner,
+          options: [
+            { value: 'remote', label: 'The calendar wins'|t('calendar-sync') },
+            { value: 'local', label: 'Craft wins'|t('calendar-sync') },
+          ],
+        }) }}
+      </div>
+
+      <div id="cs-missing">
+        {{ forms.selectField({
+          label: 'If an event leaves the calendar'|t('calendar-sync'),
+          instructions: 'What happens to the entry of an event that was deleted or cancelled in the calendar.'|t('calendar-sync'),
+          id: 'missingBehavior', name: 'missingBehavior', value: calendar.missingBehavior,
+          options: [
+            { value: 'delete', label: 'Delete the entry (it goes to the trash)'|t('calendar-sync') },
+            { value: 'disable', label: 'Disable the entry'|t('calendar-sync') },
+            { value: 'keep', label: 'Keep the entry as it is'|t('calendar-sync') },
+          ],
+        }) }}
+      </div>
+    </div>
+
+    <hr>
+    <h2>{{ 'Description'|t('calendar-sync') }}</h2>
+    <p class="light cs-lead">{{ 'How the description of an event is formatted: in {code}, in GraphQL, in the widgets – and in entries of a calendar that only comes to Craft. A calendar that syncs both ways keeps its text as it is, so nothing is lost on the way back.'|t('calendar-sync', { code: '`event.descriptionHtml`' })|md(inlineOnly=true) }}</p>
+
+    {{ forms.lightswitchField({
+      label: 'Keep line breaks'|t('calendar-sync'),
+      instructions: 'Paragraphs and line breaks stay as they were written. Switched off, the description becomes one paragraph of running text.'|t('calendar-sync'),
+      id: 'descriptionLineBreaks', name: 'descriptionLineBreaks', on: calendar.descriptionLineBreaks,
+    }) }}
+    {{ forms.lightswitchField({
+      label: 'List attached documents'|t('calendar-sync'),
+      instructions: 'Documents attached to an event – files from Google Drive, for example – are listed as links below the description.'|t('calendar-sync'),
+      id: 'descriptionDocuments', name: 'descriptionDocuments', on: calendar.descriptionDocuments,
+    }) }}
+    {{ forms.lightswitchField({
+      label: 'Turn addresses into links'|t('calendar-sync'),
+      instructions: 'Web addresses in the text become links. This only happens when the description is shown; the stored text stays as it is.'|t('calendar-sync'),
+      id: 'descriptionLinks', name: 'descriptionLinks', on: calendar.descriptionLinks,
+    }) }}
+
+    <hr>
+    <h2>{{ 'Presenting'|t('calendar-sync') }}</h2>
+
+    {{ forms.lightswitchField({
+      label: 'Public feed'|t('calendar-sync'),
+      instructions: 'An address visitors can subscribe to in their calendar app (iCalendar), and the same events as JSON for a calendar script. Anyone who knows the address can read the events.'|t('calendar-sync'),
+      id: 'feedEnabled', name: 'feedEnabled', on: calendar.feedEnabled,
+    }) }}
+
+    {% if calendar.feedUrl %}
+      {{ forms.copytextField({
+        label: 'iCalendar feed'|t('calendar-sync'),
+        id: 'feedIcs', value: calendar.getFeedUrl('ics'), class: 'code', size: 80,
+      }) }}
+      {{ forms.copytextField({
+        label: 'JSON feed'|t('calendar-sync'),
+        instructions: 'In the format of FullCalendar. It takes «start» and «end» as query parameters.'|t('calendar-sync'),
+        id: 'feedJson', value: calendar.getFeedUrl('json'), class: 'code', size: 80,
+      }) }}
+    {% endif %}
+
+    <div class="field">
+      <div class="heading"><label>{{ 'In a template'|t('calendar-sync') }}</label></div>
+      <pre class="cs-code"><code>{{ "{% for event in craft.calendarSync.events().calendar('" ~ (calendar.handle ?: 'handle') ~ "').upcoming().limit(10) %}
+  <h3>{{ event.title }}</h3>
+  <p>{{ event.startDate|date('short') }}{% if not event.allDay %}, {{ event.startDate|time('short') }}{% endif %}</p>
+{% endfor %}" }}</code></pre>
+    </div>
+  </div>
+
+  {% js %}
+    new CalendarSync.CalendarForm({{ {
+      isNew: not calendar.id,
+      sections: sections,
+      kinds: kinds,
+      connections: connectionAccess,
+      messages: {
+        none: 'None – only keep the events'|t('calendar-sync'),
+        notMapped: 'Not mapped'|t('calendar-sync'),
+        choose: 'Choose …'|t('calendar-sync'),
+        chooseConnection: 'Choose a connection first'|t('calendar-sync'),
+        noCalendars: 'This account has no calendars'|t('calendar-sync'),
+        readOnly: 'read only'|t('calendar-sync'),
+        primary: 'main calendar'|t('calendar-sync'),
+        loadFailed: 'The calendars could not be loaded.'|t('calendar-sync'),
+      },
+    }|json_encode|raw }});
+  {% endjs %}
+{% endblock %}
+
+{% block details %}
+  {% if calendar.id %}
+    <div class="meta read-only">
+      <div class="data">
+        <h5 class="heading">{{ 'Last sync'|t('calendar-sync') }}</h5>
+        <div class="value">
+          {% if calendar.lastSyncedAt %}
+            <span class="status {{ calendar.lastSyncStatus == 'ok' ? 'live' : 'expired' }}"></span>{{ calendar.lastSyncedAt|datetime('short') }}
+          {% else %}
+            {{ 'Not synced yet'|t('calendar-sync') }}
+          {% endif %}
+        </div>
+      </div>
+      {% if calendar.nextSync %}
+        <div class="data">
+          <h5 class="heading">{{ 'Next sync'|t('calendar-sync') }}</h5>
+          <div class="value">{{ calendar.nextSync|datetime('short') }}</div>
+        </div>
+      {% endif %}
+      <div class="data">
+        <h5 class="heading">{{ 'Events'|t('calendar-sync') }}</h5>
+        <div class="value"><a href="{{ url('calendar-sync/events', { calendar: calendar.handle, period: 'all' }) }}">{{ eventCount|number }}</a></div>
+      </div>
+    </div>
+
+    {% if calendar.lastSyncSummary %}
+      <div class="meta cs-meta-message {{ calendar.lastSyncStatus == 'ok' ? '' : 'error' }}">{{ calendar.lastSyncSummary|nl2br }}</div>
+    {% endif %}
+
+    <div class="cs-side-actions">
+      {% if canSync %}
+        <button type="button" class="btn formsubmit" data-icon="refresh"
+          data-action="calendar-sync/calendars/sync"
+          data-redirect="{{ ('calendar-sync/calendars/' ~ calendar.id)|hash }}">{{ 'Sync now'|t('calendar-sync') }}</button>
+        <button type="button" class="btn formsubmit"
+          data-action="calendar-sync/calendars/sync" data-param="force" data-value="1"
+          data-redirect="{{ ('calendar-sync/calendars/' ~ calendar.id)|hash }}"
+          title="{{ 'Writes every entry again from its event – after you changed the mapping.'|t('calendar-sync') }}">{{ 'Sync everything again'|t('calendar-sync') }}</button>
+      {% endif %}
+      <button type="button" class="btn formsubmit error"
+        data-action="calendar-sync/calendars/delete"
+        data-redirect="{{ 'calendar-sync/calendars'|hash }}"
+        data-confirm="{{ 'Remove this calendar from Craft? Its synced events are removed here. Entries stay, and nothing changes in the calendar itself.'|t('calendar-sync') }}">{{ 'Remove'|t('calendar-sync') }}</button>
+    </div>
+  {% endif %}
+{% endblock %}

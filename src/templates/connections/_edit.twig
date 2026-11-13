@@ -1,0 +1,180 @@
+{# One connection. Google and Microsoft are connected by signing in there; CalDAV by the address of the server, a
+   user and a password. #}
+{% extends '_layouts/cp' %}
+{% import '_includes/forms' as forms %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set fullPageForm = true %}
+{% set selectedSubnavItem = 'settings' %}
+{% set provider = providers[connection.provider] ?? null %}
+{% set oauth = provider and provider.usesOAuth() %}
+{% set writable = provider and provider.canWrite() %}
+{% set title = connection.id ? connection.name : 'New connection'|t('calendar-sync') ~ (provider ? ': ' ~ provider.displayName()) %}
+{% set crumbs = [
+  { label: 'Calendar Sync'|t('calendar-sync'), url: url('calendar-sync') },
+  { label: 'Settings'|t('calendar-sync'), url: url('calendar-sync/settings') },
+] %}
+
+{% block content %}
+  {{ actionInput('calendar-sync/connections/save') }}
+  {{ redirectInput('calendar-sync/connections/{id}') }}
+  {% if connection.id %}{{ hiddenInput('connectionId', connection.id) }}{% else %}{{ hiddenInput('provider', connection.provider) }}{% endif %}
+
+  <div class="cs">
+    {{ forms.textField({
+      label: 'Name'|t('calendar-sync'),
+      instructions: 'What you call this connection, e.g. «Office calendar».'|t('calendar-sync'),
+      id: 'name', name: 'name', required: true, first: true, autofocus: not connection.id,
+      value: connection.name, errors: connection.getErrors('name'),
+    }) }}
+
+    {% if connection.getErrors('provider') %}
+      <aside class="cs-callout cs-callout-error" role="alert">{{ connection.getFirstError('provider') }}</aside>
+    {% endif %}
+
+    {% if oauth %}
+      {% if not provider.isConfigured() %}
+        <aside class="cs-callout cs-callout-warn" role="note">
+          <p><strong>{{ '{provider} needs an OAuth app first.'|t('calendar-sync', { provider: provider.displayName() }) }}</strong>
+            {{ 'Create one in the console of the provider, enter its client ID and client secret in the settings of the plugin, and register this address there as the redirect address:'|t('calendar-sync') }}</p>
+          <p><code>{{ redirectUri }}</code></p>
+          {% if isAdmin %}<p><a class="btn small" href="{{ url('calendar-sync/settings') }}">{{ 'Open the settings'|t('calendar-sync') }}</a></p>{% endif %}
+        </aside>
+      {% elseif connection.isConnected and connection.needsSignIn %}
+        <aside class="cs-callout cs-callout-warn" role="note">
+          <p>{{ 'This connection shall write, but the account was only asked to allow reading. Sign in again to allow writing.'|t('calendar-sync') }}</p>
+          <p><a class="btn small submit" href="{{ url('calendar-sync/oauth/connect', { connectionId: connection.id }) }}">{{ 'Sign in at {provider}'|t('calendar-sync', { provider: provider.displayName() }) }}</a></p>
+        </aside>
+      {% elseif connection.isConnected %}
+        <aside class="cs-callout cs-callout-ok" role="note">
+          <p>{{ 'Connected as {account}.'|t('calendar-sync', { account: connection.account ?: provider.displayName() }) }}</p>
+          <p><a class="btn small" href="{{ url('calendar-sync/oauth/connect', { connectionId: connection.id }) }}">{{ 'Sign in again or with another account'|t('calendar-sync') }}</a></p>
+        </aside>
+      {% elseif connection.id %}
+        <aside class="cs-callout {{ connection.status == 'error' ? 'cs-callout-error' : 'cs-callout-warn' }}" role="note">
+          <p>{{ connection.lastError ?: 'This connection is not signed in yet.'|t('calendar-sync') }}</p>
+          <p><a class="btn small submit" href="{{ url('calendar-sync/oauth/connect', { connectionId: connection.id }) }}">{{ 'Sign in at {provider}'|t('calendar-sync', { provider: provider.displayName() }) }}</a></p>
+        </aside>
+      {% else %}
+        <p class="light cs-lead">{{ 'After saving you are sent to {provider} to sign in and allow access to the calendars. The plugin keeps a key for the account – never the password.'|t('calendar-sync', { provider: provider.displayName() }) }}</p>
+      {% endif %}
+    {% elseif connection.provider == 'ics' %}
+      {{ forms.textField({
+        label: 'Address of the calendar'|t('calendar-sync'),
+        instructions: 'The public address of the calendar in iCal format – it usually ends in {ics}. At Google: «Settings» → the calendar → «Integrate calendar» → «Public address in iCal format». The ID of a public Google calendar works too.'|t('calendar-sync', { ics: '`.ics`' }),
+        id: 'url', name: 'settings[url]', required: true, class: 'code',
+        placeholder: 'https://calendar.google.com/calendar/ical/…/public/basic.ics',
+        value: connection.settings.url ?? '', errors: connection.getErrors('url'),
+      }) }}
+    {% elseif provider %}
+      {{ forms.textField({
+        label: 'Address of the server'|t('calendar-sync'),
+        instructions: 'The CalDAV address your provider gives you. Examples: {icloud} (iCloud), {nextcloud} (Nextcloud), {fastmail} (Fastmail).'|t('calendar-sync', {
+          icloud: '`https://caldav.icloud.com`',
+          nextcloud: '`https://cloud.example.com/remote.php/dav`',
+          fastmail: '`https://caldav.fastmail.com`',
+        }),
+        id: 'serverUrl', name: 'settings[serverUrl]', required: true, type: 'url', class: 'code',
+        placeholder: 'https://',
+        value: connection.settings.serverUrl ?? '', errors: connection.getErrors('serverUrl'),
+      }) }}
+      {{ forms.textField({
+        label: 'User name'|t('calendar-sync'),
+        id: 'username', name: 'settings[username]', required: true, autocomplete: 'off',
+        value: connection.settings.username ?? '', errors: connection.getErrors('username'),
+      }) }}
+      {{ forms.passwordField({
+        label: 'Password'|t('calendar-sync'),
+        instructions: 'Many providers want a password made for one app instead of your own (iCloud, Fastmail, Nextcloud with two-factor sign-in). It is stored encrypted.'|t('calendar-sync'),
+        id: 'password', name: 'password', required: not connection.id, autocomplete: 'new-password',
+        placeholder: connection.id ? 'Unchanged'|t('calendar-sync') : '',
+        errors: connection.getErrors('password'),
+      }) }}
+      {{ forms.selectField({
+        label: 'Sign-in method'|t('calendar-sync'),
+        instructions: 'Basic is what almost every server uses. Choose Digest only if yours asks for it.'|t('calendar-sync'),
+        id: 'authType', name: 'settings[authType]', value: connection.settings.authType ?? 'basic',
+        options: [{ value: 'basic', label: 'Basic' }, { value: 'digest', label: 'Digest' }],
+      }) }}
+    {% endif %}
+
+    {% if provider %}
+      <hr>
+      <h2>{{ 'What Craft may do'|t('calendar-sync') }}</h2>
+      {% set accessOptions = [] %}
+      {% if writable %}
+        {% set accessOptions = accessOptions|merge([{ value: 'readwrite', label: 'Read and write – events come to Craft, entries can go to the calendar'|t('calendar-sync') }]) %}
+      {% endif %}
+      {% set accessOptions = accessOptions|merge([
+        { value: 'read', label: 'Read only – events come to Craft, the calendar is never changed'|t('calendar-sync') },
+        { value: 'busy', label: 'Busy times only – Craft keeps when something takes place, not what'|t('calendar-sync') },
+      ]) %}
+      {{ forms.selectField({
+        label: 'Access'|t('calendar-sync'),
+        instructions: oauth
+          ? 'Applies to every calendar of this connection. The account is only asked for what is chosen here: a connection that reads does not ask for the right to write.'|t('calendar-sync')
+          : 'Applies to every calendar of this connection.'|t('calendar-sync'),
+        id: 'access', name: 'settings[access]', value: connection.access, options: accessOptions,
+      }) }}
+      {{ forms.textField({
+        label: 'Title of busy times'|t('calendar-sync'),
+        instructions: 'What every event is called while only busy times are shown. Titles, places, descriptions, links, organizers and documents are not stored, and events marked as «free» are left out.'|t('calendar-sync'),
+        id: 'busyTitle', name: 'settings[busyTitle]', maxlength: 100, size: 30,
+        value: connection.busyTitle,
+      }) }}
+      {% js %}
+        (function() {
+          const $access = $('#access');
+          const toggle = () => $('#busyTitle-field').toggleClass('hidden', $access.val() !== 'busy');
+          $access.on('change', toggle);
+          toggle();
+        })();
+      {% endjs %}
+    {% endif %}
+
+    {% if connection.id and calendars|length %}
+      <hr>
+      <h2>{{ 'Calendars of this connection'|t('calendar-sync') }}</h2>
+      <ul>
+        {% for calendar in calendars %}
+          <li><a href="{{ calendar.cpEditUrl }}">{{ calendar.name }}</a> <span class="light">{{ calendar.remoteName }}</span></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block details %}
+  {% if connection.id %}
+    <div class="meta read-only">
+      <div class="data">
+        <h5 class="heading">{{ 'Provider'|t('calendar-sync') }}</h5>
+        <div class="value">{{ connection.providerName }}</div>
+      </div>
+      <div class="data">
+        <h5 class="heading">{{ 'Status'|t('calendar-sync') }}</h5>
+        <div class="value">
+          {% if connection.status == 'connected' %}<span class="status live"></span>{{ 'Connected'|t('calendar-sync') }}
+          {% elseif connection.status == 'error' %}<span class="status expired"></span>{{ 'Needs attention'|t('calendar-sync') }}
+          {% else %}<span class="status pending"></span>{{ 'Not connected yet'|t('calendar-sync') }}{% endif %}
+        </div>
+      </div>
+      {% if connection.account %}
+        <div class="data">
+          <h5 class="heading">{{ 'Account'|t('calendar-sync') }}</h5>
+          <div class="value">{{ connection.account }}</div>
+        </div>
+      {% endif %}
+    </div>
+    <div class="cs-side-actions">
+      {% if connection.status != 'pending' %}
+        <button type="button" class="btn formsubmit" data-action="calendar-sync/connections/test">{{ 'Test the connection'|t('calendar-sync') }}</button>
+      {% endif %}
+      <a class="btn" href="{{ url('calendar-sync/calendars/new', { connectionId: connection.id }) }}">{{ 'Add a calendar'|t('calendar-sync') }}</a>
+      <button type="button" class="btn formsubmit error"
+        data-action="calendar-sync/connections/delete"
+        data-redirect="{{ 'calendar-sync/settings'|hash }}"
+        data-confirm="{{ 'Remove this connection? Its calendars and their synced events are removed from Craft. Entries stay, and nothing changes at the provider.'|t('calendar-sync') }}">{{ 'Remove'|t('calendar-sync') }}</button>
+    </div>
+  {% endif %}
+{% endblock %}

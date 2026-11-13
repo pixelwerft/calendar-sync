@@ -1,0 +1,29 @@
+{# With a section mapped, events are ordinary entries. This lists the entries of the example section
+   «Calendar events» (handle calendarEvents) that the plugin creates with one click. #}
+{% set entries = craft.entries()
+  .section('calendarEvents')
+  .eventStart('>= ' ~ now|date('Y-m-d'))
+  .orderBy('eventStart asc')
+  .limit(20)
+  .all() %}
+
+<ul>
+  {% for entry in entries %}
+    <li>
+      <h3>{{ entry.title }}</h3>
+      <p>
+        {{ entry.eventStart|date('medium') }}
+        {% if entry.eventAllDay %}
+          {% if entry.eventEnd and entry.eventEnd|date('Y-m-d') != entry.eventStart|date('Y-m-d') %} – {{ entry.eventEnd|date('medium') }}{% endif %}
+        {% else %}
+          {{ entry.eventStart|time('short') }}{% if entry.eventEnd %} – {{ entry.eventEnd|time('short') }}{% endif %}
+        {% endif %}
+      </p>
+      {% if entry.eventLocation %}<p>{{ entry.eventLocation }}</p>{% endif %}
+      {% if entry.eventDescription %}<p>{{ entry.eventDescription|nl2br }}</p>{% endif %}
+      {% if entry.eventLink %}<p><a href="{{ entry.eventLink.url }}">{{ entry.eventLink.label }}</a></p>{% endif %}
+    </li>
+  {% else %}
+    <li>No events are planned.</li>
+  {% endfor %}
+</ul>

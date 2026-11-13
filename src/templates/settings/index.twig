@@ -1,0 +1,425 @@
+{# The settings: the providers with their connections and the way to their credentials, how the sync behaves, and
+   the example model. Connections can be made by everyone who may manage them; the fields of the plugin settings
+   only by admins, and only where admin changes are allowed. #}
+{% extends '_layouts/cp' %}
+{% import '_includes/forms' as forms %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set title = 'Settings'|t('calendar-sync') %}
+{% set selectedSubnavItem = 'settings' %}
+{% set fullPageForm = canEdit %}
+{% set crumbs = [{ label: 'Calendar Sync'|t('calendar-sync'), url: url('calendar-sync') }] %}
+
+{% if isAdmin %}
+  {% set tabs = {
+    providers: { label: 'Providers'|t('calendar-sync'), url: '#providers' },
+    sync: { label: 'Sync'|t('calendar-sync'), url: '#sync' },
+    model: { label: 'Example model'|t('calendar-sync'), url: '#model' },
+  } %}
+{% endif %}
+
+{% set google = providers.google ?? null %}
+{% set microsoft = providers.microsoft ?? null %}
+{% set locked = not canEdit %}
+
+{% macro warn(overridden, name) %}{{ name in overridden ? 'This setting is overridden in config/calendar-sync.php.'|t('calendar-sync') : null }}{% endmacro %}
+
+{# The connections of one or more providers, as a compact list. #}
+{% macro connectionList(connections, calendars, canConnect) %}
+  {% if connections|length %}
+    <table class="data fullwidth cs-table cs-connections">
+      <thead>
+        <tr>
+          <th scope="col">{{ 'Connection'|t('calendar-sync') }}</th>
+          <th scope="col">{{ 'Account'|t('calendar-sync') }}</th>
+          <th scope="col">{{ 'Access'|t('calendar-sync') }}</th>
+          <th scope="col">{{ 'Status'|t('calendar-sync') }}</th>
+          <th scope="col">{{ 'Calendars'|t('calendar-sync') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for connection in connections %}
+          <tr>
+            <th scope="row">
+              {% if canConnect %}<a href="{{ url('calendar-sync/connections/' ~ connection.id) }}">{{ connection.name }}</a>{% else %}{{ connection.name }}{% endif %}
+            </th>
+            <td>{{ connection.account ?: '–' }}</td>
+            <td>
+              {% if connection.access == 'readwrite' %}{{ 'Read and write'|t('calendar-sync') }}
+              {% elseif connection.access == 'busy' %}{{ 'Busy times only'|t('calendar-sync') }}
+              {% else %}{{ 'Read only'|t('calendar-sync') }}{% endif %}
+            </td>
+            <td>
+              {% if connection.status == 'error' %}
+                <span class="status expired"></span>{{ 'Needs attention'|t('calendar-sync') }}
+                {% if connection.lastError %}<div class="small error cs-message">{{ connection.lastError }}</div>{% endif %}
+              {% elseif connection.needsSignIn %}
+                <span class="status pending"></span>{{ 'Not connected yet'|t('calendar-sync') }}
+              {% else %}
+                <span class="status live"></span>{{ 'Connected'|t('calendar-sync') }}
+              {% endif %}
+            </td>
+            <td>
+              {% for calendar in calendars[connection.id] ?? [] %}
+                <a href="{{ calendar.cpEditUrl }}">{{ calendar.name }}</a>{{ not loop.last ? ', ' }}
+              {% else %}
+                <a class="light" href="{{ url('calendar-sync/calendars/new', { connectionId: connection.id }) }}">{{ 'Add a calendar'|t('calendar-sync') }}</a>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endmacro %}
+
+{# The address a provider sends people back to, to be copied into its console. #}
+{% macro redirect(redirectUri, id) %}
+  {% import '_includes/forms' as forms %}
+  <div class="cs-guide-copy">{{ forms.copytext({ id: id, value: redirectUri, class: 'code', size: 70 }) }}</div>
+{% endmacro %}
+
+{% import _self as s %}
+
+{% block content %}
+  {% if canEdit %}
+    {{ actionInput('calendar-sync/settings/save') }}
+    {{ redirectInput('calendar-sync/settings') }}
+  {% endif %}
+
+  <div class="cs">
+    {# ---------------------------------------------------------------- providers #}
+    <div id="providers">
+      <p class="light cs-lead">{{ 'Where the calendars come from. A connection is one account at a provider – or one public calendar. Add as many as you need; each calendar you sync then belongs to one of them.'|t('calendar-sync') }}</p>
+      {% if isAdmin and locked %}
+        <aside class="cs-callout" role="note">{{ 'Admin changes are switched off here, so the fields below cannot be changed. Connections can still be added and signed in.'|t('calendar-sync') }}</aside>
+      {% endif %}
+
+      {# ----- Google #}
+      {% if google %}
+        <section class="cs-card" aria-labelledby="cs-google-title">
+          <header class="cs-card-head">
+            <h2 id="cs-google-title">Google Calendar</h2>
+            {% if google.isConfigured() %}
+              <span class="cs-pill cs-pill-on">{{ 'OAuth app set up'|t('calendar-sync') }}</span>
+            {% else %}
+              <span class="cs-pill cs-pill-warn">{{ 'OAuth app missing'|t('calendar-sync') }}</span>
+            {% endif %}
+          </header>
+
+          <p class="light">{{ 'Two ways to a Google calendar – choose by what Craft should be allowed to do:'|t('calendar-sync') }}</p>
+          <div class="cs-methods">
+            <div class="cs-method">
+              <h3>{{ 'Sign in with a Google account'|t('calendar-sync') }}</h3>
+              <p><span class="cs-pill">{{ 'Read and write'|t('calendar-sync') }}</span> <span class="cs-pill">{{ 'Private calendars too'|t('calendar-sync') }}</span></p>
+              <p class="light">{{ 'All calendars the account can see. Entries can go back to the calendar. Needs an OAuth app at Google – once per website, see the guide below.'|t('calendar-sync') }}</p>
+              {% if canConnect %}
+                <a class="btn submit" href="{{ url('calendar-sync/connections/new', { provider: 'google' }) }}">{{ 'Add a Google account'|t('calendar-sync') }}</a>
+              {% endif %}
+            </div>
+            {% if providers.ics is defined %}
+              <div class="cs-method">
+                <h3>{{ 'Subscribe to a public calendar'|t('calendar-sync') }}</h3>
+                <p><span class="cs-pill">{{ 'Read only'|t('calendar-sync') }}</span> <span class="cs-pill">{{ 'No sign-in'|t('calendar-sync') }}</span></p>
+                <p class="light">{{ 'A calendar that is shared publicly, read from its address in iCal format. No OAuth app, no account. Works with every other public calendar address (.ics) as well.'|t('calendar-sync') }}</p>
+                {% if canConnect %}
+                  <a class="btn submit" href="{{ url('calendar-sync/connections/new', { provider: 'ics' }) }}">{{ 'Add a public calendar'|t('calendar-sync') }}</a>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+
+          {{ s.connectionList((connections.google ?? [])|merge(connections.ics ?? []), calendars, canConnect) }}
+
+          <details class="cs-guide" {{ not google.isConfigured() ? 'open' }}>
+            <summary>{{ 'Guide: set up the OAuth app at Google'|t('calendar-sync') }}</summary>
+            <ol>
+              <li>{{ 'Open the Google Cloud console and create a project – or choose one you already have.'|t('calendar-sync') }} <a href="https://console.cloud.google.com/" rel="noopener" target="_blank">console.cloud.google.com</a></li>
+              <li>{{ 'Under «APIs & Services» → «Library», search for «Google Calendar API» and enable it.'|t('calendar-sync') }}</li>
+              <li>{{ 'Set up the OAuth consent screen (in newer consoles: «Google Auth Platform»): a name for the app, your e-mail address, and the user type «External» – or «Internal» if only accounts of your own Google Workspace sign in.'|t('calendar-sync') }}</li>
+              <li>{{ 'Publish the app («In production»). While it is in «Testing», Google ends every sign-in after seven days.'|t('calendar-sync') }}</li>
+              <li>{{ 'Create an OAuth client (under «Credentials» or «Clients») of the type «Web application» and enter this address under «Authorized redirect URIs»:'|t('calendar-sync') }}
+                {{ s.redirect(redirectUri, 'redirect-google') }}</li>
+              <li>{{ 'Copy the client ID and the client secret into the two fields below and save.'|t('calendar-sync') }}</li>
+              <li>{{ 'Add a Google account above and sign in. Google may warn that it has not verified the app – for your own accounts, continue under «Advanced».'|t('calendar-sync') }}</li>
+            </ol>
+          </details>
+          <details class="cs-guide">
+            <summary>{{ 'Guide: find the public address of a Google calendar'|t('calendar-sync') }}</summary>
+            <ol>
+              <li>{{ 'Open Google Calendar in a browser. Under «Settings», choose the calendar in the list on the left.'|t('calendar-sync') }} <a href="https://calendar.google.com/calendar/u/0/r/settings" rel="noopener" target="_blank">calendar.google.com</a></li>
+              <li>{{ 'Under «Access permissions for events», tick «Make available to public».'|t('calendar-sync') }}</li>
+              <li>{{ 'Under «Integrate calendar», copy the «Public address in iCal format».'|t('calendar-sync') }}</li>
+              <li>{{ 'Add a public calendar above and paste the address.'|t('calendar-sync') }}</li>
+            </ol>
+            <p class="light">{{ 'Everyone on the web can then read this calendar. Only share a calendar that is meant to be public.'|t('calendar-sync') }}</p>
+          </details>
+
+          {% if isAdmin %}
+            <div class="cs-credentials">
+              {% namespace 'settings' %}
+                {{ forms.autosuggestField({
+                  label: 'Client ID'|t('calendar-sync'),
+                  instructions: 'Best kept in an environment variable, e.g. {var}.'|t('calendar-sync', { var: '`$CRAFT_GOOGLE_CLIENT_ID`' }),
+                  id: 'googleClientId', name: 'googleClientId', suggestEnvVars: true, class: 'code',
+                  value: settings.googleClientId, errors: settings.getErrors('googleClientId'),
+                  disabled: locked or 'googleClientId' in overridden, warning: s.warn(overridden, 'googleClientId'),
+                }) }}
+                {{ forms.autosuggestField({
+                  label: 'Client secret'|t('calendar-sync'),
+                  instructions: 'Best kept in an environment variable, e.g. {var}.'|t('calendar-sync', { var: '`$CRAFT_GOOGLE_CLIENT_SECRET`' }),
+                  id: 'googleClientSecret', name: 'googleClientSecret', suggestEnvVars: true, class: 'code',
+                  value: settings.googleClientSecret, errors: settings.getErrors('googleClientSecret'),
+                  disabled: locked or 'googleClientSecret' in overridden, warning: s.warn(overridden, 'googleClientSecret'),
+                }) }}
+              {% endnamespace %}
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {# ----- Microsoft #}
+      {% if microsoft %}
+        <section class="cs-card" aria-labelledby="cs-microsoft-title">
+          <header class="cs-card-head">
+            <h2 id="cs-microsoft-title">Microsoft 365 / Outlook</h2>
+            {% if microsoft.isConfigured() %}
+              <span class="cs-pill cs-pill-on">{{ 'OAuth app set up'|t('calendar-sync') }}</span>
+            {% else %}
+              <span class="cs-pill cs-pill-warn">{{ 'OAuth app missing'|t('calendar-sync') }}</span>
+            {% endif %}
+          </header>
+
+          <div class="cs-methods">
+            <div class="cs-method">
+              <h3>{{ 'Sign in with a Microsoft account'|t('calendar-sync') }}</h3>
+              <p><span class="cs-pill">{{ 'Read and write'|t('calendar-sync') }}</span> <span class="cs-pill">{{ 'Work, school and private accounts'|t('calendar-sync') }}</span></p>
+              <p class="light">{{ 'All calendars of the account in Microsoft 365, Outlook.com or Exchange Online. Needs an app registration at Microsoft – once per website, see the guide below.'|t('calendar-sync') }}</p>
+              {% if canConnect %}
+                <a class="btn submit" href="{{ url('calendar-sync/connections/new', { provider: 'microsoft' }) }}">{{ 'Add a Microsoft account'|t('calendar-sync') }}</a>
+              {% endif %}
+            </div>
+          </div>
+
+          {{ s.connectionList(connections.microsoft ?? [], calendars, canConnect) }}
+
+          <details class="cs-guide" {{ not microsoft.isConfigured() ? 'open' }}>
+            <summary>{{ 'Guide: register the app at Microsoft'|t('calendar-sync') }}</summary>
+            <ol>
+              <li>{{ 'Open the Microsoft Entra admin center and go to «App registrations» → «New registration».'|t('calendar-sync') }} <a href="https://entra.microsoft.com/" rel="noopener" target="_blank">entra.microsoft.com</a></li>
+              <li>{{ 'Give the app a name and choose who may sign in. For work, school and private accounts, pick the option that covers every organisation and personal Microsoft accounts.'|t('calendar-sync') }}</li>
+              <li>{{ 'Under «Redirect URI», choose the platform «Web» and enter this address:'|t('calendar-sync') }}
+                {{ s.redirect(redirectUri, 'redirect-microsoft') }}</li>
+              <li>{{ 'After registering, copy the «Application (client) ID» from the overview into the field below.'|t('calendar-sync') }}</li>
+              <li>{{ 'Under «Certificates & secrets», create a «New client secret» and copy its value – not the secret ID – into the field below. A secret runs out after 24 months at the latest: note the date.'|t('calendar-sync') }}</li>
+              <li>{{ 'Under «API permissions», add the delegated Microsoft Graph permissions «Calendars.ReadWrite», «User.Read» and «offline_access». If every connection only reads, «Calendars.Read» is enough.'|t('calendar-sync') }}</li>
+              <li>{{ 'Save, then add a Microsoft account above and sign in.'|t('calendar-sync') }}</li>
+            </ol>
+          </details>
+
+          {% if isAdmin %}
+            <div class="cs-credentials">
+              {% namespace 'settings' %}
+                {{ forms.autosuggestField({
+                  label: 'Application (client) ID'|t('calendar-sync'),
+                  instructions: 'Best kept in an environment variable, e.g. {var}.'|t('calendar-sync', { var: '`$CRAFT_MICROSOFT_CLIENT_ID`' }),
+                  id: 'microsoftClientId', name: 'microsoftClientId', suggestEnvVars: true, class: 'code',
+                  value: settings.microsoftClientId, errors: settings.getErrors('microsoftClientId'),
+                  disabled: locked or 'microsoftClientId' in overridden, warning: s.warn(overridden, 'microsoftClientId'),
+                }) }}
+                {{ forms.autosuggestField({
+                  label: 'Client secret'|t('calendar-sync'),
+                  instructions: 'The value of the secret, not its ID. Best kept in an environment variable, e.g. {var}.'|t('calendar-sync', { var: '`$CRAFT_MICROSOFT_CLIENT_SECRET`' }),
+                  id: 'microsoftClientSecret', name: 'microsoftClientSecret', suggestEnvVars: true, class: 'code',
+                  value: settings.microsoftClientSecret, errors: settings.getErrors('microsoftClientSecret'),
+                  disabled: locked or 'microsoftClientSecret' in overridden, warning: s.warn(overridden, 'microsoftClientSecret'),
+                }) }}
+                {{ forms.autosuggestField({
+                  label: 'Tenant'|t('calendar-sync'),
+                  instructions: '«common» for work, school and private accounts, «organizations» for work and school accounts only, «consumers» for private accounts only – or the ID of your own tenant if the app is registered for one organisation.'|t('calendar-sync'),
+                  id: 'microsoftTenant', name: 'microsoftTenant', suggestEnvVars: true, class: 'code',
+                  value: settings.microsoftTenant, errors: settings.getErrors('microsoftTenant'),
+                  disabled: locked or 'microsoftTenant' in overridden, warning: s.warn(overridden, 'microsoftTenant'),
+                }) }}
+              {% endnamespace %}
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {# ----- CalDAV #}
+      {% if providers.caldav is defined %}
+        <section class="cs-card" aria-labelledby="cs-caldav-title">
+          <header class="cs-card-head">
+            <h2 id="cs-caldav-title">CalDAV</h2>
+            <span class="cs-pill cs-pill-on">{{ 'Nothing to set up'|t('calendar-sync') }}</span>
+          </header>
+
+          <div class="cs-methods">
+            <div class="cs-method">
+              <h3>{{ 'Connect with address, user name and password'|t('calendar-sync') }}</h3>
+              <p><span class="cs-pill">{{ 'Read and write'|t('calendar-sync') }}</span> <span class="cs-pill">Nextcloud · iCloud · Fastmail · mailbox.org</span></p>
+              <p class="light">{{ 'Nextcloud, iCloud, Fastmail, mailbox.org and any other server that speaks CalDAV.'|t('calendar-sync') }}</p>
+              {% if canConnect %}
+                <a class="btn submit" href="{{ url('calendar-sync/connections/new', { provider: 'caldav' }) }}">{{ 'Add a CalDAV account'|t('calendar-sync') }}</a>
+              {% endif %}
+            </div>
+          </div>
+
+          {{ s.connectionList(connections.caldav ?? [], calendars, canConnect) }}
+
+          <details class="cs-guide">
+            <summary>{{ 'Guide: what a CalDAV connection needs'|t('calendar-sync') }}</summary>
+            <ol>
+              <li>{{ 'Find the CalDAV address of your provider. Common ones:'|t('calendar-sync') }}
+                <ul class="cs-plain">
+                  <li>iCloud: <code>https://caldav.icloud.com</code></li>
+                  <li>Nextcloud: <code>https://cloud.example.com/remote.php/dav</code></li>
+                  <li>Fastmail: <code>https://caldav.fastmail.com</code></li>
+                  <li>mailbox.org: <code>https://dav.mailbox.org</code></li>
+                </ul>
+              </li>
+              <li>{{ 'Create a password for this website – an «app password» or «app-specific password» – in the security settings of your account. iCloud, Fastmail and Nextcloud with two-factor sign-in do not accept the normal password.'|t('calendar-sync') }}</li>
+              <li>{{ 'Add a CalDAV account above with the address, the user name and that password. The plugin finds the calendars of the account by itself.'|t('calendar-sync') }}</li>
+            </ol>
+          </details>
+        </section>
+      {% endif %}
+
+      {# ----- providers added by other plugins #}
+      {% for handle, provider in providers %}
+        {% if handle not in ['google', 'microsoft', 'caldav', 'ics'] %}
+          <section class="cs-card">
+            <header class="cs-card-head"><h2>{{ provider.displayName() }}</h2></header>
+            {% if canConnect %}
+              <p><a class="btn submit" href="{{ url('calendar-sync/connections/new', { provider: handle }) }}">{{ 'Add a connection'|t('calendar-sync') }}</a></p>
+            {% endif %}
+            {{ s.connectionList(connections[handle] ?? [], calendars, canConnect) }}
+          </section>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {# ---------------------------------------------------------------- sync #}
+    {% if isAdmin %}
+      {% set intervalOptions = [] %}
+      {% for minutes, label in intervals %}
+        {% set intervalOptions = intervalOptions|merge([{ value: minutes, label: label|t('calendar-sync') }]) %}
+      {% endfor %}
+
+      <div id="sync" class="hidden">
+        <p class="light cs-lead">{{ 'How often a calendar is synced, in which direction and over which period is set for each calendar. These settings apply to all of them.'|t('calendar-sync') }}</p>
+
+        {% namespace 'settings' %}
+          {{ forms.lightswitchField({
+            label: 'Sync automatically'|t('calendar-sync'),
+            instructions: 'While people use the site, the plugin checks once a minute which calendars are due and puts them on the queue. Switch this off if a cron job runs the console command instead.'|t('calendar-sync'),
+            id: 'autoSync', name: 'autoSync', on: settings.autoSync,
+            disabled: locked or 'autoSync' in overridden, warning: s.warn(overridden, 'autoSync'),
+          }) }}
+        {% endnamespace %}
+
+        <aside class="cs-callout" role="note">
+          <p>{{ 'A site that nobody visits at night does not sync at night. For a sync that runs on time, let a cron job call the console command every few minutes – it syncs exactly the calendars that are due:'|t('calendar-sync') }}</p>
+          <p><code>*/5 * * * * php /path/to/craft calendar-sync/sync</code></p>
+        </aside>
+
+        {% namespace 'settings' %}
+          {{ forms.lightswitchField({
+            label: 'Send entries when they are saved'|t('calendar-sync'),
+            instructions: 'An entry of a section that goes to a calendar is sent there right after it was saved, deleted or restored – without waiting for the next run.'|t('calendar-sync'),
+            id: 'syncOnSave', name: 'syncOnSave', on: settings.syncOnSave,
+            disabled: locked or 'syncOnSave' in overridden, warning: s.warn(overridden, 'syncOnSave'),
+          }) }}
+
+          {{ forms.selectField({
+            label: 'How often – for new calendars'|t('calendar-sync'),
+            id: 'defaultInterval', name: 'defaultInterval', value: settings.defaultInterval, options: intervalOptions,
+            disabled: locked or 'defaultInterval' in overridden, warning: s.warn(overridden, 'defaultInterval'),
+          }) }}
+
+          <div class="cs-pair">
+            {{ forms.textField({
+              label: 'Days back – for new calendars'|t('calendar-sync'),
+              id: 'defaultPastDays', name: 'defaultPastDays', type: 'number', min: 0, max: 3650, size: 6,
+              value: settings.defaultPastDays, errors: settings.getErrors('defaultPastDays'),
+              disabled: locked or 'defaultPastDays' in overridden, warning: s.warn(overridden, 'defaultPastDays'),
+            }) }}
+            {{ forms.textField({
+              label: 'Days ahead – for new calendars'|t('calendar-sync'),
+              id: 'defaultFutureDays', name: 'defaultFutureDays', type: 'number', min: 0, max: 3650, size: 6,
+              value: settings.defaultFutureDays, errors: settings.getErrors('defaultFutureDays'),
+              disabled: locked or 'defaultFutureDays' in overridden, warning: s.warn(overridden, 'defaultFutureDays'),
+            }) }}
+          </div>
+
+          {{ forms.textField({
+            label: 'Length of an event without an end (minutes)'|t('calendar-sync'),
+            instructions: 'Used when an entry has a start but no end.'|t('calendar-sync'),
+            id: 'defaultEventDuration', name: 'defaultEventDuration', type: 'number', min: 1, max: 1440, size: 6,
+            value: settings.defaultEventDuration, errors: settings.getErrors('defaultEventDuration'),
+            disabled: locked or 'defaultEventDuration' in overridden, warning: s.warn(overridden, 'defaultEventDuration'),
+          }) }}
+
+          {{ forms.textField({
+            label: 'Wait for a provider (seconds)'|t('calendar-sync'),
+            instructions: 'How long a request to Google, Microsoft or a CalDAV server may take.'|t('calendar-sync'),
+            id: 'requestTimeout', name: 'requestTimeout', type: 'number', min: 5, max: 300, size: 6,
+            value: settings.requestTimeout, errors: settings.getErrors('requestTimeout'),
+            disabled: locked or 'requestTimeout' in overridden, warning: s.warn(overridden, 'requestTimeout'),
+          }) }}
+        {% endnamespace %}
+      </div>
+
+      {# -------------------------------------------------------------- example model #}
+      <div id="model" class="hidden">
+        <p class="light cs-lead">{{ 'A ready-made place for events in Craft: a section with an entry type and the fields an event needs. Create it here, then choose it in a calendar – the field mapping is filled in by itself. Use it as it is, or as a pattern for a section of your own.'|t('calendar-sync') }}</p>
+
+        {% if model.section %}
+          <aside class="cs-callout cs-callout-ok" role="note">
+            <p>{{ 'The section «{name}» exists.'|t('calendar-sync', { name: model.section.name|t('site') }) }}</p>
+            <p class="cs-actions">
+              <a class="btn small" href="{{ url('entries/' ~ model.section.handle) }}">{{ 'Show its entries'|t('calendar-sync') }}</a>
+              {% if canEdit %}<a class="btn small" href="{{ url('settings/sections/' ~ model.section.id) }}">{{ 'Edit the section'|t('calendar-sync') }}</a>{% endif %}
+              <a class="btn small" href="{{ url('calendar-sync/calendars/new') }}">{{ 'Set up a calendar'|t('calendar-sync') }}</a>
+            </p>
+          </aside>
+        {% elseif model.canInstall %}
+          <p>
+            <button type="button" class="btn submit formsubmit" data-icon="wand"
+              data-action="calendar-sync/settings/install-model">{{ 'Create the example model'|t('calendar-sync') }}</button>
+          </p>
+        {% else %}
+          <aside class="cs-callout cs-callout-warn" role="note">{{ 'Sections and fields can only be created where admin changes are allowed.'|t('calendar-sync') }}</aside>
+        {% endif %}
+
+        <h2>{{ 'What is created'|t('calendar-sync') }}</h2>
+        <table class="data fullwidth cs-table cs-model">
+          <thead>
+            <tr>
+              <th scope="col">{{ 'Name'|t('calendar-sync') }}</th>
+              <th scope="col">{{ 'Handle'|t('calendar-sync') }}</th>
+              <th scope="col">{{ 'Type'|t('app') }}</th>
+              <th scope="col">{{ 'Of the event'|t('calendar-sync') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for part in model.parts %}
+              <tr>
+                <th scope="row">{{ part.name }}</th>
+                <td><code>{{ part.handle }}</code></td>
+                <td>
+                  {% if part.kind == 'section' %}{{ 'Section'|t('calendar-sync') }} ({{ part.type }})
+                  {% elseif part.kind == 'entryType' %}{{ 'Entry type'|t('calendar-sync') }}
+                  {% else %}{{ part.type }}{% endif %}
+                </td>
+                <td>{{ part.attribute ? part.name : (part.kind == 'entryType' ? 'Title'|t('calendar-sync') : '–') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="light small">{{ 'Fields that already exist under these handles are used as they are. Nothing is overwritten.'|t('calendar-sync') }}</p>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

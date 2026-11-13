@@ -1,0 +1,93 @@
+{# The events the plugin keeps – to see what a calendar brought and which entry belongs to which event. #}
+{% extends '_layouts/cp' %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set title = 'Events'|t('calendar-sync') %}
+{% set selectedSubnavItem = 'events' %}
+{% set byId = calendars|index('id') %}
+
+{% block content %}
+  <div class="cs">
+    <form method="get" class="cs-filters" accept-charset="UTF-8">
+      <div class="select">
+        <select name="calendar" aria-label="{{ 'Calendar'|t('calendar-sync') }}" onchange="this.form.submit()">
+          <option value="">{{ 'All calendars'|t('calendar-sync') }}</option>
+          {% for calendar in calendars %}
+            <option value="{{ calendar.handle }}" {{ calendar.handle == selectedCalendar ? 'selected' }}>{{ calendar.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="select">
+        <select name="period" aria-label="{{ 'Period'|t('calendar-sync') }}" onchange="this.form.submit()">
+          <option value="upcoming" {{ period == 'upcoming' ? 'selected' }}>{{ 'Running and coming'|t('calendar-sync') }}</option>
+          <option value="past" {{ period == 'past' ? 'selected' }}>{{ 'Past'|t('calendar-sync') }}</option>
+          <option value="all" {{ period == 'all' ? 'selected' }}>{{ 'All'|t('calendar-sync') }}</option>
+        </select>
+      </div>
+      <input type="search" class="text" name="q" value="{{ search }}" placeholder="{{ 'Search title, description, location'|t('calendar-sync') }}" size="34">
+      <button type="submit" class="btn">{{ 'Search'|t('calendar-sync') }}</button>
+      <span class="light">{{ '{n, plural, =0{No events} =1{# event} other{# events}}'|t('calendar-sync', { n: total }) }}</span>
+    </form>
+
+    {% if events|length %}
+      <table class="data fullwidth cs-table">
+        <thead>
+          <tr>
+            <th scope="col">{{ 'Event'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'When'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Location'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Calendar'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Entry'|t('calendar-sync') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+            {% set calendar = byId[event.calendarId] ?? null %}
+            <tr>
+              <th scope="row">
+                {{ event.title ?: '(No title)'|t('calendar-sync') }}
+                {% if event.recurring %}<span class="cs-pill" title="{{ 'One occurrence of a repeating event'|t('calendar-sync') }}">{{ 'repeats'|t('calendar-sync') }}</span>{% endif %}
+                {% if event.status == 'tentative' %}<span class="cs-pill cs-pill-warn">{{ 'tentative'|t('calendar-sync') }}</span>{% endif %}
+                {% if event.status == 'cancelled' %}<span class="cs-pill cs-pill-error">{{ 'cancelled'|t('calendar-sync') }}</span>{% endif %}
+                {% if event.origin == 'craft' %}<span class="cs-pill" title="{{ 'This event was made from an entry'|t('calendar-sync') }}">{{ 'from Craft'|t('calendar-sync') }}</span>{% endif %}
+                {% if event.description %}<span class="light small cs-clip">{{ event.description|striptags|slice(0, 140) }}</span>{% endif %}
+              </th>
+              <td>
+                {% if event.allDay %}
+                  {{ event.startDate|date('medium') }}{% if event.isMultiDay %} – {{ event.endDate|date('medium') }}{% endif %}
+                  <div class="light small">{{ 'All day'|t('calendar-sync') }}</div>
+                {% else %}
+                  {{ event.startDate|date('medium') }}
+                  <div class="light small">{{ event.startDate|time('short') }} – {{ event.isMultiDay ? event.endDate|datetime('short') : event.endDate|time('short') }}</div>
+                {% endif %}
+              </td>
+              <td>{{ event.location }}</td>
+              <td>{% if calendar %}<span class="cs-dot" style="{{ calendar.color ? 'background:' ~ calendar.color }}"></span>{{ calendar.name }}{% endif %}</td>
+              <td>
+                {% set entry = event.entry %}
+                {% if entry %}
+                  <a href="{{ entry.cpEditUrl }}">{{ entry.title }}</a>
+                {% elseif event.entryId %}
+                  <a class="light" href="{{ url('entries', { id: event.entryId }) }}">{{ 'Not live'|t('calendar-sync') }}</a>
+                {% else %}
+                  <span class="light">–</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if pages > 1 %}
+        {% set params = { calendar: selectedCalendar, period: period, q: search } %}
+        <nav class="cs-pager" aria-label="{{ 'Pages'|t('calendar-sync') }}">
+          {% if page > 1 %}<a class="btn small" href="{{ url('calendar-sync/events', params|merge({ page: page - 1 })) }}">{{ 'Back'|t('calendar-sync') }}</a>{% endif %}
+          <span class="light">{{ 'Page {page} of {pages}'|t('calendar-sync', { page: page, pages: pages }) }}</span>
+          {% if page < pages %}<a class="btn small" href="{{ url('calendar-sync/events', params|merge({ page: page + 1 })) }}">{{ 'Next'|t('calendar-sync') }}</a>{% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p>{{ 'No events here. They appear after the first sync of a calendar.'|t('calendar-sync') }}</p>
+    {% endif %}
+  </div>
+{% endblock %}

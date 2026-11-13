@@ -1,0 +1,42 @@
+{# The next events of a calendar, grouped by the day they start on. #}
+{% set calendar = craft.calendarSync.calendar('team') %}
+{% set days = craft.calendarSync.events()
+  .calendar('team')
+  .upcoming()
+  .limit(30)
+  .withEntries()
+  .byDay() %}
+
+<section class="events">
+  <h2>{{ calendar.name ?? 'Events' }}</h2>
+
+  {% for day, events in days %}
+    <h3>{{ day|date('full') }}</h3>
+    <ul>
+      {% for event in events %}
+        <li>
+          <strong>
+            {% if event.entry and event.entry.url %}<a href="{{ event.entry.url }}">{{ event.title }}</a>{% else %}{{ event.title }}{% endif %}
+          </strong>
+          <span>
+            {% if event.allDay %}
+              {{ event.isMultiDay ? 'until ' ~ event.endDate|date('medium') : 'all day' }}
+            {% else %}
+              {{ event.startDate|time('short') }} – {{ event.endDate|time('short') }}
+            {% endif %}
+          </span>
+          {% if event.location %}<span>{{ event.location }}</span>{% endif %}
+          {% if event.description %}<div>{{ event.descriptionHtml|raw }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No events are planned.</p>
+  {% endfor %}
+
+  {# only there while the public feed of the calendar is switched on #}
+  {% set feed = craft.calendarSync.feedUrl('team') %}
+  {% if feed %}
+    <p><a href="{{ feed|replace({ 'https://': 'webcal://' }) }}">Subscribe to this calendar</a></p>
+  {% endif %}
+</section>

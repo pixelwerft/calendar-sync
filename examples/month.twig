@@ -1,0 +1,52 @@
+{# A month view. The month comes from the query string: ?month=2026-12 #}
+{% set first = (craft.app.request.getQueryParam('month') ?: now|date('Y-m'))|date('Y-m-01')|date_modify('midnight') %}
+{% set days = craft.calendarSync.events().calendar('team').month(first).all() %}
+
+{# every event on every day it touches #}
+{% set byDay = {} %}
+{% for event in days %}
+  {% set day = event.startDate|date('Y-m-d') > first|date('Y-m-d') ? event.startDate : first %}
+  {% set last = event.endDate|date('Y-m-d') %}
+  {% for i in 0..31 %}
+    {% set key = day|date_modify('+' ~ i ~ ' days')|date('Y-m-d') %}
+    {% if key <= last and key|date('Y-m') == first|date('Y-m') %}
+      {% set byDay = byDay|merge({ (key): (byDay[key] ?? [])|merge([event]) }) %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+{# weeks start on Monday #}
+{% set offset = first|date('N') - 1 %}
+{% set daysInMonth = first|date('t') %}
+
+<nav>
+  <a href="?month={{ first|date_modify('-1 month')|date('Y-m') }}">←</a>
+  <strong>{{ first|date('F Y') }}</strong>
+  <a href="?month={{ first|date_modify('+1 month')|date('Y-m') }}">→</a>
+</nav>
+
+<table class="month">
+  <thead>
+    <tr>{% for i in 0..6 %}<th scope="col">{{ '2024-01-01'|date_modify('+' ~ i ~ ' days')|date('D') }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for cell in 0..(offset + daysInMonth - 1) %}
+      {% if cell % 7 == 0 %}<tr>{% endif %}
+      {% if cell < offset %}
+        <td></td>
+      {% else %}
+        {% set date = first|date_modify('+' ~ (cell - offset) ~ ' days') %}
+        <td{% if date|date('Y-m-d') == now|date('Y-m-d') %} class="today"{% endif %}>
+          <span class="day">{{ date|date('j') }}</span>
+          {% for event in byDay[date|date('Y-m-d')] ?? [] %}
+            <div class="event" title="{{ event.location }}">
+              {% if not event.allDay and event.startDate|date('Y-m-d') == date|date('Y-m-d') %}{{ event.startDate|time('short') }}{% endif %}
+              {{ event.title }}
+            </div>
+          {% endfor %}
+        </td>
+      {% endif %}
+      {% if cell % 7 == 6 or loop.last %}</tr>{% endif %}
+    {% endfor %}
+  </tbody>
+</table>

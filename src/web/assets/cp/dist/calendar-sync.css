@@ -1,0 +1,147 @@
+/* Calendar Sync – control panel pages. Tokens live on .cs; everything else refers to them.
+   Plain CSS on purpose: a plugin is installed with Composer, so there is no build step. */
+.cs {
+  --cs-ok: #27ae60;
+  --cs-warn: #f0b429;
+  --cs-alert: #cf1124;
+  --cs-info: #203345;
+  --cs-surface: var(--white, #fff);
+  --cs-surface-muted: var(--gray-050, #f3f7fc);
+  --cs-border: var(--hairline-color, #e3e5e8);
+  --cs-muted: var(--gray-600, #596673);
+  --cs-radius: 6px;
+}
+
+.cs h2 { margin: 18px 0 10px; }
+.cs h2:first-child { margin-top: 0; }
+.cs-lead { max-width: 52rem; margin: 0 0 14px; }
+.cs .small { font-size: 12px; }
+.cs-num { text-align: right !important; white-space: nowrap; }
+
+.cs-callout {
+  max-width: 52rem;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--cs-border);
+  border-left: 4px solid var(--cs-info);
+  border-radius: var(--cs-radius);
+  background: var(--cs-surface-muted);
+}
+.cs-callout-warn { border-left-color: var(--cs-warn); }
+.cs-callout-error { border-left-color: var(--cs-alert); }
+.cs-callout-ok { border-left-color: var(--cs-ok); }
+.cs-callout > :last-child { margin-bottom: 0; }
+
+/* first steps */
+.cs-empty { max-width: 46rem; }
+.cs-steps { margin: 0; padding: 0; list-style: none; counter-reset: cs-step; display: grid; gap: 10px; }
+.cs-steps li {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 12px 14px 12px 52px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-surface);
+  counter-increment: cs-step;
+}
+.cs-steps li::before {
+  content: counter(cs-step);
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cs-info);
+  color: #fff;
+  font-weight: 600;
+  line-height: 26px;
+  text-align: center;
+}
+.cs-steps li.cs-done::before { content: '✓'; background: var(--cs-ok); }
+
+/* lists */
+.cs-table th[scope='row'] { font-weight: 600; }
+.cs-table td, .cs-table th { vertical-align: top; }
+.cs-dot { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; background: var(--cs-info); vertical-align: baseline; }
+.cs-pill { display: inline-block; padding: 0 8px; border-radius: 10px; background: var(--cs-surface-muted); font-size: 12px; white-space: nowrap; }
+.cs-pill-on { background: #dff3e7; color: #14532d; }
+.cs-pill-warn { background: #fff4d6; color: #5c4400; }
+.cs-pill-error { background: #fde2e4; color: #8a041a; }
+.cs-message { max-width: 28rem; margin-top: 2px; overflow-wrap: anywhere; }
+.cs-clip { display: block; max-width: 24rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* forms */
+.cs-pair { display: flex; flex-wrap: wrap; gap: 24px 32px; margin: 24px 0; }
+.cs-pair > .field { margin: 0 !important; }
+.cs-mapping { width: auto; min-width: min(100%, 34rem); }
+.cs-mapping th[scope='row'] { font-weight: 600; }
+.cs-mapping td, .cs-mapping th { vertical-align: middle; }
+.cs-arrow { color: var(--cs-muted); text-align: center; }
+.cs-code {
+  max-width: 52rem;
+  margin: 0;
+  padding: 10px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-surface-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* settings: one card per provider */
+.cs-card {
+  max-width: 62rem;
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-surface);
+}
+.cs-card > :last-child { margin-bottom: 0; }
+.cs-card-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
+.cs-card-head h2 { margin: 0; }
+.cs-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 12px 0 16px; }
+.cs-method {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  justify-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-surface-muted);
+}
+.cs-method h3 { margin: 0; font-size: 15px; }
+.cs-method p { margin: 0; }
+.cs-method .btn { margin-top: 4px; }
+.cs-connections { margin: 0 0 16px; }
+.cs-guide { margin: 0 0 10px; border: 1px solid var(--cs-border); border-radius: var(--cs-radius); }
+.cs-guide > summary { padding: 9px 14px; font-weight: 600; cursor: pointer; }
+.cs-guide > summary::marker { content: '▸  '; }
+.cs-guide[open] > summary::marker { content: '▾  '; }
+.cs-guide[open] > summary { border-bottom: 1px solid var(--cs-border); }
+.cs-guide > ol { margin: 12px 14px 12px 34px; padding: 0; list-style: decimal; }
+.cs-guide > ol > li { margin: 0 0 8px; padding-left: 4px; }
+.cs-guide > p { margin: 0 14px 12px; }
+.cs-guide-copy { margin: 6px 0 2px; }
+.cs-plain { margin: 6px 0 0; padding: 0; list-style: none; }
+.cs-credentials { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--cs-border); }
+.cs-credentials > .field:first-child { margin-top: 0; }
+.cs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cs-model code { font-size: 12px; }
+
+/* filters of the event list */
+.cs-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+.cs-pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 14px; }
+
+/* sidebar of a form */
+.cs-side-actions { display: grid; gap: 8px; justify-items: start; margin-top: 14px; }
+.cs-meta-message { padding: 10px 14px; font-size: 12px; overflow-wrap: anywhere; }
+.cs-meta-message.error { color: var(--cs-alert, #cf1124); }
+
+/* fields inside a wrapper that is shown and hidden keep the distance fields have among each other */
+.cs #cs-conflict, .cs #cs-missing { margin: 24px 0; }
