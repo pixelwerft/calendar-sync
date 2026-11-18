@@ -24,7 +24,7 @@ class Microsoft extends OAuthProvider
      */
     private const PREFER = 'outlook.timezone="UTC", outlook.body-content-type="text", IdType="ImmutableId"';
 
-    private const SELECT = 'id,iCalUId,changeKey,subject,body,location,start,end,isAllDay,isCancelled,showAs,type,seriesMasterId,organizer,onlineMeeting,originalStartTimeZone';
+    private const SELECT = 'id,iCalUId,changeKey,subject,body,location,start,end,isAllDay,isCancelled,showAs,sensitivity,categories,type,seriesMasterId,organizer,onlineMeeting,originalStartTimeZone';
 
     /**
      * @inheritdoc
@@ -208,6 +208,8 @@ class Microsoft extends OAuthProvider
         $event->recurring = in_array($item['type'] ?? '', ['occurrence', 'exception'], true) || !empty($item['seriesMasterId']);
         $event->allDay = (bool)($item['isAllDay'] ?? false);
         $event->free = ($item['showAs'] ?? '') === 'free';
+        $event->private = in_array($item['sensitivity'] ?? 'normal', ['private', 'confidential'], true);
+        $event->categories = array_values(array_filter(array_map('strval', (array)($item['categories'] ?? []))));
         // Graph names time zones the Windows way; only keep what PHP knows
         $original = (string)($item['originalStartTimeZone'] ?? '');
         $event->timezone = $original !== '' && in_array($original, DateTimeZone::listIdentifiers(), true) ? $original : null;

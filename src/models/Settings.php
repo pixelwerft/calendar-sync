@@ -2,6 +2,7 @@
 
 namespace pixelwerft\calendarsync\models;
 
+use Craft;
 use craft\base\Model;
 use craft\helpers\App;
 
@@ -38,6 +39,18 @@ class Settings extends Model
     /** Seconds to wait for an answer of a provider. */
     public int $requestTimeout = 30;
 
+    /** Days the log of the runs is kept. 0 = no log. */
+    public int $logDays = 30;
+
+    /** Send an e-mail when a calendar starts to fail, and before the Microsoft client secret runs out. */
+    public bool $notifyOnError = false;
+
+    /** Who gets these e-mails: addresses separated by commas. Empty = the address the site sends its mail from. */
+    public string $notificationEmails = '';
+
+    /** The day the client secret of the Microsoft app runs out (`YYYY-MM-DD`), to be warned in time. Microsoft does not tell. */
+    public string $microsoftSecretExpires = '';
+
     public function getGoogleClientId(): string
     {
         return (string)App::parseEnv($this->googleClientId);
@@ -61,6 +74,31 @@ class Settings extends Model
     public function getMicrosoftTenant(): string
     {
         return (string)App::parseEnv($this->microsoftTenant) ?: 'common';
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getNotificationEmails(): array
+    {
+        $list = (string)App::parseEnv($this->notificationEmails);
+        $addresses = preg_split('~[\s,;]+~', $list) ?: [];
+
+        return array_values(array_filter($addresses, static fn(string $address) => filter_var($address, FILTER_VALIDATE_EMAIL) !== false));
+    }
+
+    /**
+     * Days until the client secret of the Microsoft app runs out; negative once it has. Null if no date is set.
+     */
+    public function getMicrosoftSecretDaysLeft(?\DateTimeInterface $today = null): ?int
+    {
+        $expires = \DateTimeImmutable::createFromFormat('!Y-m-d', trim($this->microsoftSecretExpires));
+        if ($expires === false) {
+            return null;
+        }
+        $today = \DateTimeImmutable::createFromFormat('!Y-m-d', ($today ?? new \DateTimeImmutable())->format('Y-m-d'));
+
+        return (int)$today->diff($expires)->format('%r%a');
     }
 
     /**
@@ -91,7 +129,18 @@ class Settings extends Model
         return [
             [['googleClientId', 'googleClientSecret', 'microsoftClientId', 'microsoftClientSecret', 'microsoftTenant'], 'trim'],
             [['microsoftTenant'], 'default', 'value' => 'common'],
-            [['autoSync', 'syncOnSave'], 'boolean'],
+            [['autoSync', 'syncOnSave', 'notifyOnError'], 'boolean'],
+            [['notificationEmails', 'microsoftSecretExpires'], 'trim'],
+            [['logDays'], 'integer', 'min' => 0, 'max' => 3650],
+            [['microsoftSecretExpires'], 'date', 'format' => 'php:Y-m-d'],
+            [['notificationEmails'], function(string $attribute) {
+                $list = (string)App::parseEnv($this->$attribute);
+                foreach (preg_split('~[\s,;]+~', $list, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $address) {
+                    if (filter_var($address, FILTER_VALIDATE_EMAIL) === false) {
+                        $this->addError($attribute, Craft::t('calendar-sync', '«{address}» is not an e-mail address.', ['address' => $address]));
+                    }
+                }
+            }],
             [['defaultInterval'], 'in', 'range' => array_keys(self::intervals())],
             [['defaultPastDays', 'defaultFutureDays'], 'integer', 'min' => 0, 'max' => 3650],
             [['defaultEventDuration'], 'integer', 'min' => 1, 'max' => 1440],

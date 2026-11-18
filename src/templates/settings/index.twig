@@ -234,6 +234,14 @@
                   value: settings.microsoftClientSecret, errors: settings.getErrors('microsoftClientSecret'),
                   disabled: locked or 'microsoftClientSecret' in overridden, warning: s.warn(overridden, 'microsoftClientSecret'),
                 }) }}
+                {{ forms.dateField({
+                  label: 'Client secret runs out on'|t('calendar-sync'),
+                  instructions: 'The day Microsoft shows next to the secret. The plugin warns thirty days before – Microsoft does not tell an app when its secret ends.'|t('calendar-sync'),
+                  id: 'microsoftSecretExpires', name: 'microsoftSecretExpires',
+                  value: settings.microsoftSecretExpires ? date(settings.microsoftSecretExpires) : null,
+                  errors: settings.getErrors('microsoftSecretExpires'),
+                  disabled: locked or 'microsoftSecretExpires' in overridden, warning: s.warn(overridden, 'microsoftSecretExpires'),
+                }) }}
                 {{ forms.autosuggestField({
                   label: 'Tenant'|t('calendar-sync'),
                   instructions: '«common» for work, school and private accounts, «organizations» for work and school accounts only, «consumers» for private accounts only – or the ID of your own tenant if the app is registered for one organisation.'|t('calendar-sync'),
@@ -360,6 +368,35 @@
             value: settings.defaultEventDuration, errors: settings.getErrors('defaultEventDuration'),
             disabled: locked or 'defaultEventDuration' in overridden, warning: s.warn(overridden, 'defaultEventDuration'),
           }) }}
+
+          <hr>
+          <h2>{{ 'Log and notifications'|t('calendar-sync') }}</h2>
+
+          {{ forms.textField({
+            label: 'Keep the log (days)'|t('calendar-sync'),
+            instructions: 'How long the log keeps what the runs did. 0 switches the log off.'|t('calendar-sync'),
+            id: 'logDays', name: 'logDays', type: 'number', min: 0, max: 3650, size: 6,
+            value: settings.logDays, errors: settings.getErrors('logDays'),
+            disabled: locked or 'logDays' in overridden, warning: s.warn(overridden, 'logDays'),
+          }) }}
+
+          {{ forms.lightswitchField({
+            label: 'Send an e-mail when a calendar fails'|t('calendar-sync'),
+            instructions: 'One message when a calendar starts to fail and one a day while it keeps failing – and a warning before the Microsoft client secret runs out. A notice in the control panel appears either way.'|t('calendar-sync'),
+            id: 'notifyOnError', name: 'notifyOnError', on: settings.notifyOnError,
+            disabled: locked or 'notifyOnError' in overridden, warning: s.warn(overridden, 'notifyOnError'),
+          }) }}
+
+          {{ forms.autosuggestField({
+            label: 'Send it to'|t('calendar-sync'),
+            instructions: 'E-mail addresses, separated by commas. Empty = the address the site sends its mail from.'|t('calendar-sync'),
+            id: 'notificationEmails', name: 'notificationEmails', suggestEnvVars: true,
+            value: settings.notificationEmails, errors: settings.getErrors('notificationEmails'),
+            disabled: locked or 'notificationEmails' in overridden, warning: s.warn(overridden, 'notificationEmails'),
+          }) }}
+
+          <hr>
+          <h2>{{ 'Requests'|t('calendar-sync') }}</h2>
 
           {{ forms.textField({
             label: 'Wait for a provider (seconds)'|t('calendar-sync'),

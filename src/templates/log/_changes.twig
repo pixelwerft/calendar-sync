@@ -1,0 +1,12 @@
+{# The single changes of a run or a trial run. #}
+<table class="data cs-table cs-changes-table">
+  <tbody>
+    {% for change in changes %}
+      <tr>
+        <td><span class="cs-pill cs-pill-{{ change.action|split('.')|first }}">{{ change.label }}</span></td>
+        <td class="cs-num light">{{ change.date ? change.date|date('short') }}</td>
+        <td>{{ change.title }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

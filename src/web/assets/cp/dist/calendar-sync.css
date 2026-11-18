@@ -145,3 +145,20 @@
 
 /* fields inside a wrapper that is shown and hidden keep the distance fields have among each other */
 .cs #cs-conflict, .cs #cs-missing { margin: 24px 0; }
+
+/* log and trial run */
+.cs-log td, .cs-log th { vertical-align: top; }
+.cs-changes { margin-top: 6px; }
+.cs-changes > summary { color: var(--link-color, #1f5fea); cursor: pointer; }
+.cs-changes-table { width: auto; min-width: min(100%, 30rem); margin-top: 6px; }
+.cs-changes-table td { padding-top: 4px; padding-bottom: 4px; }
+.cs-pill-event { background: #e5edfb; color: #173a7a; }
+.cs-pill-entry { background: #dff3e7; color: #14532d; }
+.cs-pill-sent { background: #efe6fb; color: #4a2380; }
+.cs-pill-conflict { background: #fde2e4; color: #8a041a; }
+.cs-pill-skipped { background: var(--cs-surface-muted); color: var(--cs-muted); }
+.cs-figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; max-width: 62rem; margin: 0 0 20px; }
+.cs-figures > div { padding: 10px 12px; border: 1px solid var(--cs-border); border-radius: var(--cs-radius); background: var(--cs-surface-muted); }
+.cs-figures dt { color: var(--cs-muted); font-size: 12px; }
+.cs-figures dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cs-preview-actions { margin-top: 20px; }

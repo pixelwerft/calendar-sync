@@ -202,6 +202,7 @@ class Google extends OAuthProvider
         $event->organizer = $item['organizer']['displayName'] ?? $item['organizer']['email'] ?? null;
         $event->recurring = !empty($item['recurringEventId']);
         $event->free = ($item['transparency'] ?? 'opaque') === 'transparent';
+        $event->private = in_array($item['visibility'] ?? 'default', ['private', 'confidential'], true);
         foreach ($item['attachments'] ?? [] as $attachment) {
             if (!empty($attachment['fileUrl'])) {
                 $event->attachments[] = [

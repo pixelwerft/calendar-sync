@@ -5,6 +5,8 @@ namespace pixelwerft\calendarsync\console\controllers;
 use craft\console\Controller;
 use craft\helpers\Console;
 use pixelwerft\calendarsync\CalendarSync;
+use pixelwerft\calendarsync\models\Run;
+use pixelwerft\calendarsync\models\SyncResult;
 use yii\console\ExitCode;
 
 /**
@@ -21,6 +23,9 @@ class SyncController extends Controller
     /** @var bool Put the runs on the queue instead of running them here. */
     public bool $queue = false;
 
+    /** @var bool Only say what a run would do; nothing is written here or in the calendar. */
+    public bool $dryRun = false;
+
     public $defaultAction = 'index';
 
     /**
@@ -28,7 +33,7 @@ class SyncController extends Controller
      */
     public function options($actionID): array
     {
-        return array_merge(parent::options($actionID), ['all', 'force', 'queue']);
+        return array_merge(parent::options($actionID), ['all', 'force', 'queue', 'dryRun']);
     }
 
     /**
@@ -53,6 +58,10 @@ class SyncController extends Controller
             $calendars = $plugin->calendars->getDueCalendars();
         }
 
+        if (!$this->dryRun) {
+            // a cron job is the clock of the site: it also does what is due once a day
+            $plugin->daily();
+        }
         if (!$calendars) {
             $this->stdout('No calendar is due.' . PHP_EOL);
             return ExitCode::OK;
@@ -60,14 +69,20 @@ class SyncController extends Controller
 
         $failed = false;
         foreach ($calendars as $calendar) {
-            if ($this->queue) {
-                $plugin->sync->queue($calendar, $this->force, true);
+            if ($this->queue && !$this->dryRun) {
+                $plugin->sync->queue($calendar, $this->force, true, Run::TRIGGER_CONSOLE);
                 $this->stdout("{$calendar->handle}: queued" . PHP_EOL);
                 continue;
             }
             $this->stdout("{$calendar->handle}: ", Console::BOLD);
-            $result = $plugin->sync->syncCalendar($calendar, $this->force);
-            $this->stdout($result->summary() . PHP_EOL, $result->hasErrors() ? Console::FG_RED : Console::FG_GREEN);
+            $result = $plugin->sync->syncCalendar($calendar, $this->force, Run::TRIGGER_CONSOLE, $this->dryRun);
+            $this->stdout(($this->dryRun ? '[dry run] ' : '') . $result->summary() . PHP_EOL, $result->hasErrors() ? Console::FG_RED : Console::FG_GREEN);
+            if ($this->dryRun) {
+                $labels = SyncResult::actionLabels();
+                foreach ($result->changes as $change) {
+                    $this->stdout(sprintf("  %-26s %s  %s\n", $labels[$change['action']] ?? $change['action'], $change['date'] ?? '          ', $change['title']));
+                }
+            }
             $failed = $failed || $result->hasErrors();
         }
 

@@ -189,22 +189,44 @@ abstract class Ics
         $calendar->add('X-PUBLISHED-TTL', 'PT1H');
 
         foreach ($items as $item) {
-            /** @var VEvent $vevent */
-            $vevent = $calendar->add('VEVENT', ['UID' => $item['uid']]);
-            $event = clone $item['event'];
-            if (!empty($item['url'])) {
-                $event->url = $item['url'];
-            }
-            self::apply($vevent, $event, EventData::WRITABLE);
-            if ($event->status !== EventData::STATUS_CONFIRMED) {
-                self::set($vevent, 'STATUS', strtoupper($event->status));
-            }
-            if (!empty($item['modified'])) {
-                self::set($vevent, 'LAST-MODIFIED', DateTimeImmutable::createFromInterface($item['modified'])->setTimezone(new DateTimeZone('UTC')));
-            }
+            self::addItem($calendar, $item);
         }
 
         return $calendar->serialize();
+    }
+
+    /**
+     * One event as a calendar file a visitor can open – without the name and the refresh hints of a feed.
+     *
+     * @param array{uid: string, event: EventData, url?: ?string, modified?: ?\DateTimeInterface} $item
+     */
+    public static function event(array $item): string
+    {
+        $calendar = new VCalendar();
+        self::set($calendar, 'PRODID', self::PRODID);
+        self::addItem($calendar, $item);
+
+        return $calendar->serialize();
+    }
+
+    /**
+     * @param array{uid: string, event: EventData, url?: ?string, modified?: ?\DateTimeInterface} $item
+     */
+    private static function addItem(VCalendar $calendar, array $item): void
+    {
+        /** @var VEvent $vevent */
+        $vevent = $calendar->add('VEVENT', ['UID' => $item['uid']]);
+        $event = clone $item['event'];
+        if (!empty($item['url'])) {
+            $event->url = $item['url'];
+        }
+        self::apply($vevent, $event, EventData::WRITABLE);
+        if ($event->status !== EventData::STATUS_CONFIRMED) {
+            self::set($vevent, 'STATUS', strtoupper($event->status));
+        }
+        if (!empty($item['modified'])) {
+            self::set($vevent, 'LAST-MODIFIED', DateTimeImmutable::createFromInterface($item['modified'])->setTimezone(new DateTimeZone('UTC')));
+        }
     }
 
     /**
@@ -276,6 +298,14 @@ abstract class Ics
             default => EventData::STATUS_CONFIRMED,
         };
         $event->free = strtoupper((string)($vevent->TRANSP ?? '')) === 'TRANSPARENT';
+        $event->private = in_array(strtoupper((string)($vevent->CLASS ?? '')), ['PRIVATE', 'CONFIDENTIAL'], true);
+        foreach ($vevent->select('CATEGORIES') as $categories) {
+            foreach ($categories->getParts() as $category) {
+                if (trim((string)$category) !== '') {
+                    $event->categories[] = trim((string)$category);
+                }
+            }
+        }
         foreach ($vevent->select('ATTACH') as $attach) {
             // only what is a link; files inside the event are left where they are
             $url = trim((string)$attach);
