@@ -142,6 +142,9 @@ class Calendars extends Component
                 'descriptionLineBreaks' => $calendar->descriptionLineBreaks,
                 'descriptionDocuments' => $calendar->descriptionDocuments,
                 'descriptionLinks' => $calendar->descriptionLinks,
+                'skipPrivate' => $calendar->skipPrivate,
+                'filterInclude' => $calendar->filterInclude,
+                'filterExclude' => $calendar->filterExclude,
             ]),
         ];
 
@@ -222,6 +225,9 @@ class Calendars extends Component
             'descriptionLineBreaks' => (bool)($options['descriptionLineBreaks'] ?? true),
             'descriptionDocuments' => (bool)($options['descriptionDocuments'] ?? true),
             'descriptionLinks' => (bool)($options['descriptionLinks'] ?? true),
+            'skipPrivate' => (bool)($options['skipPrivate'] ?? false),
+            'filterInclude' => isset($options['filterInclude']) && $options['filterInclude'] !== '' ? (string)$options['filterInclude'] : null,
+            'filterExclude' => isset($options['filterExclude']) && $options['filterExclude'] !== '' ? (string)$options['filterExclude'] : null,
             'lastSyncedAt' => DateTimeHelper::toDateTime($row['lastSyncedAt']) ?: null,
             'lastSyncStatus' => $row['lastSyncStatus'],
             'lastSyncMessage' => $row['lastSyncMessage'],

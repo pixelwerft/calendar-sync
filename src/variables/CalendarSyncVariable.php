@@ -5,6 +5,7 @@ namespace pixelwerft\calendarsync\variables;
 use pixelwerft\calendarsync\CalendarSync;
 use pixelwerft\calendarsync\db\EventQuery;
 use pixelwerft\calendarsync\models\Calendar;
+use pixelwerft\calendarsync\models\Event;
 
 /**
  * `craft.calendarSync` in templates.
@@ -33,6 +34,21 @@ class CalendarSyncVariable
     public function calendar(string $handle): ?Calendar
     {
         return CalendarSync::$plugin->calendars->getCalendarByHandle($handle);
+    }
+
+    /**
+     * Structured data (schema.org) for a list of events, as one script tag: `{{ craft.calendarSync.jsonLd(events) }}`.
+     *
+     * @param iterable<Event> $events
+     */
+    public function jsonLd(iterable $events): \Twig\Markup
+    {
+        $items = [];
+        foreach ($events as $event) {
+            $items[] = $event->getJsonLd();
+        }
+
+        return Event::jsonLdScript($items);
     }
 
     /**

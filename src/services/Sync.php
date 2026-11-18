@@ -18,6 +18,7 @@ use pixelwerft\calendarsync\models\Calendar;
 use pixelwerft\calendarsync\models\Connection;
 use pixelwerft\calendarsync\models\Event;
 use pixelwerft\calendarsync\models\EventData;
+use pixelwerft\calendarsync\models\Run;
 use pixelwerft\calendarsync\models\SyncResult;
 use pixelwerft\calendarsync\providers\ProviderInterface;
 use Throwable;
@@ -41,14 +42,29 @@ class Sync extends Component
     /** Entries are being saved by the sync itself: no reason to send them back to the calendar. */
     private bool $writing = false;
 
+    /** A trial run: everything is looked at and counted, nothing is written – not here and not in the calendar. */
+    private bool $preview = false;
+
+    /**
+     * Entries the first half of a trial run would have written or removed. The second half must not count them
+     * again: in a real run they would be up to date by then.
+     *
+     * @var array<int, bool>
+     */
+    private array $previewHandled = [];
+
     /**
      * Runs one calendar now.
      *
      * @param bool $force Write every entry again, also for events that did not change – after the mapping changed
+     * @param string $trigger What started the run, for the log: one of the `Run::TRIGGER_…` values
+     * @param bool $preview A trial run: says what would happen and changes nothing
      */
-    public function syncCalendar(Calendar $calendar, bool $force = false): SyncResult
+    public function syncCalendar(Calendar $calendar, bool $force = false, string $trigger = Run::TRIGGER_MANUAL, bool $preview = false): SyncResult
     {
         $result = new SyncResult();
+        $result->preview = $preview;
+        $started = microtime(true);
         $mutex = Craft::$app->getMutex();
         $lock = 'calendar-sync:' . $calendar->id;
         if (!$mutex->acquire($lock)) {
@@ -56,6 +72,8 @@ class Sync extends Component
             return $result;
         }
 
+        $this->preview = $preview;
+        $this->previewHandled = [];
         try {
             [$connection, $provider] = $this->endpoint($calendar);
             [$from, $to] = $calendar->window();
@@ -66,21 +84,31 @@ class Sync extends Component
             if ($calendar->exports() && $connection->canWrite()) {
                 $this->export($calendar, $connection, $provider, $from, $to, $result);
             }
-            // what has left the period and belongs to no entry is not kept for ever
-            CalendarSync::$plugin->events->prune($calendar->id, $from);
+            if (!$preview) {
+                // what has left the period and belongs to no entry is not kept for ever
+                CalendarSync::$plugin->events->prune($calendar->id, $from);
+            }
         } catch (Throwable $e) {
             Craft::error(sprintf('Calendar «%s»: %s', $calendar->handle, $e->getMessage()), 'calendar-sync');
             Craft::$app->getErrorHandler()->logException($e);
             $result->addError($e->getMessage());
         } finally {
+            $this->preview = false;
+            $this->previewHandled = [];
             $mutex->release($lock);
         }
 
+        if ($preview) {
+            return $result;
+        }
+
+        $statusBefore = $calendar->lastSyncStatus;
         CalendarSync::$plugin->calendars->markSynced(
             $calendar,
             $result->hasErrors() ? Calendar::STATUS_ERROR : Calendar::STATUS_OK,
-            $result->toJson(),
+            $result->toJson(false),
         );
+        $this->afterRun($calendar, $result, $started, $trigger, $statusBefore);
 
         return $result;
     }
@@ -91,6 +119,7 @@ class Sync extends Component
     public function pushEntry(Calendar $calendar, int $entryId): SyncResult
     {
         $result = new SyncResult();
+        $started = microtime(true);
         if (!$calendar->enabled || !$calendar->exports() || !$calendar->hasEntries()) {
             return $result;
         }
@@ -122,13 +151,33 @@ class Sync extends Component
             $mutex->release($lock);
         }
 
+        if ($result->hasErrors() || $result->hasChanges()) {
+            // the state of the calendar is that of its last full run; a single entry only leaves a line in the log
+            $this->afterRun($calendar, $result, $started, Run::TRIGGER_ENTRY, null);
+        }
+
         return $result;
+    }
+
+    /**
+     * The log and the notifications. Whatever goes wrong here must not turn a run that worked into one that failed.
+     */
+    private function afterRun(Calendar $calendar, SyncResult $result, float $started, string $trigger, ?string $statusBefore): void
+    {
+        try {
+            CalendarSync::$plugin->runs->record($calendar, $result, $started, $trigger);
+            if ($trigger !== Run::TRIGGER_ENTRY) {
+                CalendarSync::$plugin->notifier->afterRun($calendar, $result, $statusBefore);
+            }
+        } catch (Throwable $e) {
+            Craft::error('Run not logged: ' . $e->getMessage(), 'calendar-sync');
+        }
     }
 
     /**
      * Puts a run of a calendar on the queue. A calendar that already waits there is not queued again, unless asked.
      */
-    public function queue(Calendar $calendar, bool $force = false, bool $always = false): bool
+    public function queue(Calendar $calendar, bool $force = false, bool $always = false, string $trigger = Run::TRIGGER_MANUAL): bool
     {
         $cache = Craft::$app->getCache();
         $key = self::queuedKey($calendar->id);
@@ -136,7 +185,7 @@ class Sync extends Component
             return false;
         }
         $cache->set($key, true, 900);
-        Queue::push(new SyncCalendar(['calendarId' => $calendar->id, 'force' => $force]));
+        Queue::push(new SyncCalendar(['calendarId' => $calendar->id, 'force' => $force, 'trigger' => $trigger]));
 
         return true;
     }
@@ -148,7 +197,7 @@ class Sync extends Component
     {
         $queued = 0;
         foreach (CalendarSync::$plugin->calendars->getDueCalendars() as $calendar) {
-            if ($this->queue($calendar)) {
+            if ($this->queue($calendar, false, false, Run::TRIGGER_SCHEDULE)) {
                 $queued++;
             }
         }
@@ -196,10 +245,13 @@ class Sync extends Component
     {
         $events = CalendarSync::$plugin->events;
         $remote = $provider->fetchEvents($connection, $calendar->remoteId, $from, $to);
+        $existing = $events->getEventsByCalendarId((int)$calendar->id);
+        if ($calendar->hasFilters()) {
+            $remote = $this->filtered($calendar, $remote, $existing, $result);
+        }
         if ($connection->getIsBusyOnly()) {
             $remote = $this->busyOnly($remote, $connection->getBusyTitle());
         }
-        $existing = $events->getEventsByCalendarId((int)$calendar->id);
         $seen = [];
 
         foreach ($remote as $data) {
@@ -216,13 +268,19 @@ class Sync extends Component
 
             try {
                 if ($previous === null) {
-                    $event = $events->saveFromData($calendar, $data, null, ['origin' => Event::ORIGIN_REMOTE]);
+                    $event = $this->preview
+                        ? $events->draft($calendar, $data)
+                        : $events->saveFromData($calendar, $data, null, ['origin' => Event::ORIGIN_REMOTE]);
                     $changed = true;
                     $result->created++;
+                    $result->note(SyncResult::EVENT_NEW, $data->title, $data->start);
                 } elseif ($previous->remoteHash !== $data->hash() || $previous->getIsCancelled()) {
-                    $event = $events->saveFromData($calendar, $data, $previous);
+                    $event = $this->preview
+                        ? $events->draft($calendar, $data, $previous)
+                        : $events->saveFromData($calendar, $data, $previous);
                     $changed = true;
                     $result->updated++;
+                    $result->note(SyncResult::EVENT_CHANGED, $data->title, $data->start);
                 } else {
                     $event = $previous;
                     $changed = false;
@@ -255,6 +313,32 @@ class Sync extends Component
                 $result->addError(sprintf('«%s»: %s', $event->title, $e->getMessage()));
             }
         }
+    }
+
+    /**
+     * The events that pass the filters of the calendar. An event that was made from an entry always passes: it is
+     * Craft's own, and leaving it out would look as if it had been deleted in the calendar.
+     *
+     * @param EventData[] $remote
+     * @param array<string, Event> $existing By key
+     * @return EventData[]
+     */
+    private function filtered(Calendar $calendar, array $remote, array $existing, SyncResult $result): array
+    {
+        $accepted = [];
+        foreach ($remote as $data) {
+            $known = $existing[Events::key($data->remoteId)] ?? null;
+            if ($known?->origin === Event::ORIGIN_CRAFT || $calendar->accepts($data)) {
+                $accepted[] = $data;
+                continue;
+            }
+            if ($data->status !== EventData::STATUS_CANCELLED) {
+                $result->skipped++;
+                $result->note(SyncResult::SKIPPED, $data->title, $data->start);
+            }
+        }
+
+        return $accepted;
     }
 
     /**
@@ -310,13 +394,17 @@ class Sync extends Component
             if ($calendar->authorId) {
                 $entry->setAuthorId($calendar->authorId);
             }
+            $result->entriesCreated++;
+            $result->note(SyncResult::ENTRY_NEW, $data->title, $data->start);
+            if ($this->preview) {
+                return;
+            }
             $mapper->applyToEntry($calendar, $entry, $data);
             $this->saveEntry($entry, $event);
             $events->updateLink($event, [
                 'entryId' => (int)$entry->id,
                 'entryHash' => $mapper->entryHash($calendar, $entry, $event),
             ]);
-            $result->entriesCreated++;
 
             return;
         }
@@ -330,6 +418,7 @@ class Sync extends Component
             $localChanged = $mapper->entryHash($calendar, $entry, $previous ?? $event) !== $event->entryHash;
             if ($localChanged) {
                 $result->conflicts++;
+                $result->note(SyncResult::CONFLICT, $data->title, $data->start);
                 if ($calendar->conflictWinner === Calendar::WINNER_LOCAL) {
                     // the entry stays; the other half of the run writes it over the event
                     return;
@@ -337,10 +426,15 @@ class Sync extends Component
             }
         }
 
+        $result->entriesUpdated++;
+        $result->note(SyncResult::ENTRY_CHANGED, $data->title, $data->start);
+        if ($this->preview) {
+            $this->previewHandled[(int)$entry->id] = true;
+            return;
+        }
         $mapper->applyToEntry($calendar, $entry, $data);
         $this->saveEntry($entry, $event);
         $events->updateLink($event, ['entryHash' => $mapper->entryHash($calendar, $entry, $event)]);
-        $result->entriesUpdated++;
     }
 
     /**
@@ -350,41 +444,56 @@ class Sync extends Component
     {
         $events = CalendarSync::$plugin->events;
         $entry = $event->entryId && $calendar->hasEntries() ? $this->findEntry($calendar, $event->entryId) : null;
+        if ($entry !== null && $this->preview) {
+            $this->previewHandled[(int)$entry->id] = true;
+        }
 
         if ($entry !== null) {
             switch ($calendar->missingBehavior) {
                 case Calendar::MISSING_DELETE:
-                    $this->writing = true;
-                    try {
-                        Craft::$app->getElements()->deleteElement($entry);
-                    } finally {
-                        $this->writing = false;
+                    if (!$this->preview) {
+                        $this->writing = true;
+                        try {
+                            Craft::$app->getElements()->deleteElement($entry);
+                        } finally {
+                            $this->writing = false;
+                        }
                     }
                     $result->entriesRemoved++;
+                    $result->note(SyncResult::ENTRY_REMOVED, (string)$entry->title, $event->startDate);
                     break;
                 case Calendar::MISSING_DISABLE:
                     if ($entry->enabled) {
-                        $entry->enabled = false;
-                        $this->saveEntry($entry, $event);
+                        if (!$this->preview) {
+                            $entry->enabled = false;
+                            $this->saveEntry($entry, $event);
+                        }
                         $result->entriesRemoved++;
+                        $result->note(SyncResult::ENTRY_REMOVED, (string)$entry->title, $event->startDate);
                     }
                     break;
                 default:
                     if ($calendar->exports()) {
                         // The entry stays and is live. Without a trace of its event it would look like a new entry
                         // and go to the calendar again – so the event is kept as cancelled.
-                        Craft::$app->getDb()->createCommand()
-                            ->update(Table::EVENTS, ['status' => EventData::STATUS_CANCELLED], ['id' => $event->id])
-                            ->execute();
+                        if (!$this->preview) {
+                            Craft::$app->getDb()->createCommand()
+                                ->update(Table::EVENTS, ['status' => EventData::STATUS_CANCELLED], ['id' => $event->id])
+                                ->execute();
+                        }
                         $result->removed++;
+                        $result->note(SyncResult::EVENT_REMOVED, $event->title, $event->startDate);
 
                         return;
                     }
             }
         }
 
-        $events->deleteEvent($event);
+        if (!$this->preview) {
+            $events->deleteEvent($event);
+        }
         $result->removed++;
+        $result->note(SyncResult::EVENT_REMOVED, $event->title, $event->startDate);
     }
 
     /**
@@ -413,6 +522,9 @@ class Sync extends Component
         foreach ($query->each(100) as $entry) {
             /** @var Entry $entry */
             $handled[$entry->id] = true;
+            if (isset($this->previewHandled[$entry->id])) {
+                continue;
+            }
             try {
                 $this->exportEntry($calendar, $connection, $provider, $entry, $linked[$entry->id] ?? null, $from, $to, $result);
             } catch (Throwable $e) {
@@ -422,7 +534,7 @@ class Sync extends Component
         }
 
         foreach ($linked as $entryId => $event) {
-            if (isset($handled[$entryId])) {
+            if (isset($handled[$entryId]) || isset($this->previewHandled[$entryId])) {
                 continue;
             }
             try {
@@ -455,18 +567,27 @@ class Sync extends Component
             if ($data->end <= $from || $data->start >= $to) {
                 return;
             }
+            $result->pushed++;
+            $result->note(SyncResult::SENT_NEW, $data->title, $data->start);
+            if ($this->preview) {
+                return;
+            }
             $remote = $provider->createEvent($connection, $calendar->remoteId, $data);
             $events->saveFromData($calendar, $remote, null, [
                 'origin' => Event::ORIGIN_CRAFT,
                 'entryId' => (int)$entry->id,
                 'entryHash' => $hash,
             ]);
-            $result->pushed++;
 
             return;
         }
 
         if ($event->entryHash === $hash) {
+            return;
+        }
+        $result->pushed++;
+        $result->note(SyncResult::SENT_CHANGED, $data->title, $data->start);
+        if ($this->preview) {
             return;
         }
 
@@ -480,7 +601,6 @@ class Sync extends Component
             $remote = $provider->createEvent($connection, $calendar->remoteId, $data);
         }
         $events->saveFromData($calendar, $remote, $event, ['entryHash' => $hash]);
-        $result->pushed++;
     }
 
     /**
@@ -499,9 +619,13 @@ class Sync extends Component
             return;
         }
 
+        $result->pushedRemoved++;
+        $result->note(SyncResult::SENT_REMOVED, $event->title, $event->startDate);
+        if ($this->preview) {
+            return;
+        }
         $provider->deleteEvent($connection, $calendar->remoteId, $event->remoteId);
         CalendarSync::$plugin->events->deleteEvent($event);
-        $result->pushedRemoved++;
     }
 
     /**

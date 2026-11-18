@@ -1,0 +1,69 @@
+{# A trial run: what the next run of the calendar would do. Nothing was written. #}
+{% extends '_layouts/cp' %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set title = 'Trial run: {name}'|t('calendar-sync', { name: calendar.name }) %}
+{% set selectedSubnavItem = 'calendars' %}
+{% set crumbs = [
+  { label: 'Calendar Sync'|t('calendar-sync'), url: url('calendar-sync') },
+  { label: 'Calendars'|t('calendar-sync'), url: url('calendar-sync/calendars') },
+  { label: calendar.name, url: calendar.cpEditUrl },
+] %}
+
+{% block content %}
+  <div class="cs">
+    {% if result.hasErrors() %}
+      <aside class="cs-callout cs-callout-error" role="alert">
+        <p><strong>{{ 'The trial run met errors – a real run would meet them too:'|t('calendar-sync') }}</strong></p>
+        {% for error in result.errors %}<p>{{ error }}</p>{% endfor %}
+      </aside>
+    {% elseif not result.hasChanges() %}
+      <aside class="cs-callout cs-callout-ok" role="note">
+        <p><strong>{{ 'Nothing to do.'|t('calendar-sync') }}</strong> {{ 'Craft and the calendar agree; a run would change nothing.'|t('calendar-sync') }}</p>
+      </aside>
+    {% else %}
+      <aside class="cs-callout" role="note">
+        <p><strong>{{ 'This is what a run would do. Nothing has been changed – not in Craft and not in the calendar.'|t('calendar-sync') }}</strong></p>
+      </aside>
+    {% endif %}
+
+    <dl class="cs-figures">
+      <div><dt>{{ 'Events new'|t('calendar-sync') }}</dt><dd>{{ result.created|number }}</dd></div>
+      <div><dt>{{ 'Events changed'|t('calendar-sync') }}</dt><dd>{{ result.updated|number }}</dd></div>
+      <div><dt>{{ 'Events removed'|t('calendar-sync') }}</dt><dd>{{ result.removed|number }}</dd></div>
+      {% if calendar.hasEntries() %}
+        <div><dt>{{ 'Entries new'|t('calendar-sync') }}</dt><dd>{{ result.entriesCreated|number }}</dd></div>
+        <div><dt>{{ 'Entries changed'|t('calendar-sync') }}</dt><dd>{{ result.entriesUpdated|number }}</dd></div>
+        <div><dt>{{ 'Entries removed'|t('calendar-sync') }}</dt><dd>{{ result.entriesRemoved|number }}</dd></div>
+      {% endif %}
+      {% if calendar.exports() %}
+        <div><dt>{{ 'Sent to the calendar'|t('calendar-sync') }}</dt><dd>{{ result.pushed|number }}</dd></div>
+        <div><dt>{{ 'Removed from the calendar'|t('calendar-sync') }}</dt><dd>{{ result.pushedRemoved|number }}</dd></div>
+        <div><dt>{{ 'Conflicts'|t('calendar-sync') }}</dt><dd>{{ result.conflicts|number }}</dd></div>
+      {% endif %}
+      {% if calendar.hasFilters() %}
+        <div><dt>{{ 'Left out by the filter'|t('calendar-sync') }}</dt><dd>{{ result.skipped|number }}</dd></div>
+      {% endif %}
+      <div><dt>{{ 'Events unchanged'|t('calendar-sync') }}</dt><dd>{{ result.unchanged|number }}</dd></div>
+    </dl>
+
+    {% if changes|length %}
+      <h2>{{ 'In detail'|t('calendar-sync') }}</h2>
+      {% include 'calendar-sync/log/_changes' with { changes: changes } only %}
+      {% if changes|length >= 200 %}
+        <p class="light small">{{ 'Only the first 200 are listed; the numbers above count all of them.'|t('calendar-sync') }}</p>
+      {% endif %}
+    {% endif %}
+
+    <form method="post" accept-charset="UTF-8" class="cs-actions cs-preview-actions">
+      {{ csrfInput() }}
+      {{ actionInput('calendar-sync/calendars/sync') }}
+      {{ hiddenInput('calendarId', calendar.id) }}
+      {{ redirectInput('calendar-sync/calendars/' ~ calendar.id) }}
+      <a class="btn" href="{{ calendar.cpEditUrl }}">{{ 'Back to the calendar'|t('calendar-sync') }}</a>
+      {% if not result.hasErrors() %}
+        <button type="submit" class="btn submit">{{ 'Sync now'|t('calendar-sync') }}</button>
+      {% endif %}
+    </form>
+  </div>
+{% endblock %}

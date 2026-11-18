@@ -10,4 +10,5 @@ abstract class Table
     public const CONNECTIONS = '{{%calendarsync_connections}}';
     public const CALENDARS = '{{%calendarsync_calendars}}';
     public const EVENTS = '{{%calendarsync_events}}';
+    public const RUNS = '{{%calendarsync_runs}}';
 }

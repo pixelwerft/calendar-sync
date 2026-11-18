@@ -66,7 +66,48 @@ class Events extends Component
      */
     public function saveFromData(Calendar $calendar, EventData $data, ?Event $event = null, array $link = []): Event
     {
-        $values = [
+        $values = $this->values($calendar, $data) + array_intersect_key($link, array_flip(['origin', 'entryId', 'entryHash']));
+
+        if ($event?->id) {
+            Db::update(Table::EVENTS, $values, ['id' => $event->id]);
+            $id = $event->id;
+        } else {
+            Db::insert(Table::EVENTS, $values + ['uid' => StringHelper::UUID()]);
+            $id = (int)Craft::$app->getDb()->getLastInsertID(Table::EVENTS);
+        }
+
+        return $this->getEventById($id) ?? throw new \RuntimeException('The event could not be stored.');
+    }
+
+    public function getEventByUid(string $uid): ?Event
+    {
+        $row = (new Query())->from(Table::EVENTS)->where(['uid' => $uid])->one();
+
+        return $row ? $this->populate($row) : null;
+    }
+
+    /**
+     * The event as it would be stored – for a trial run, which stores nothing.
+     */
+    public function draft(Calendar $calendar, EventData $data, ?Event $event = null): Event
+    {
+        return $this->populate($this->values($calendar, $data) + [
+            'id' => $event->id ?? 0,
+            'origin' => $event->origin ?? Event::ORIGIN_REMOTE,
+            'entryId' => $event->entryId ?? null,
+            'entryHash' => $event->entryHash ?? null,
+            'dateCreated' => null,
+            'dateUpdated' => null,
+            'uid' => $event->uid ?? null,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function values(Calendar $calendar, EventData $data): array
+    {
+        return [
             'calendarId' => $calendar->id,
             'remoteKey' => self::key($data->remoteId),
             'remoteId' => $data->remoteId,
@@ -85,17 +126,7 @@ class Events extends Component
             'organizer' => Text::limit($data->organizer, 500),
             'recurring' => $data->recurring,
             'remoteHash' => $data->hash(),
-        ] + array_intersect_key($link, array_flip(['origin', 'entryId', 'entryHash']));
-
-        if ($event?->id) {
-            Db::update(Table::EVENTS, $values, ['id' => $event->id]);
-            $id = $event->id;
-        } else {
-            Db::insert(Table::EVENTS, $values + ['uid' => StringHelper::UUID()]);
-            $id = (int)Craft::$app->getDb()->getLastInsertID(Table::EVENTS);
-        }
-
-        return $this->getEventById($id) ?? throw new \RuntimeException('The event could not be stored.');
+        ];
     }
 
     /**

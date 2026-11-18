@@ -144,6 +144,28 @@
     </div>
 
     <hr>
+    <h2>{{ 'Filters'|t('calendar-sync') }}</h2>
+    <p class="light cs-lead">{{ 'Which events of the calendar come to Craft. An event that is left out is treated as if it were not in the calendar. Events made from entries are never left out.'|t('calendar-sync') }}</p>
+
+    {{ forms.lightswitchField({
+      label: 'Leave out private events'|t('calendar-sync'),
+      instructions: 'Events marked as private or confidential in the calendar stay there.'|t('calendar-sync'),
+      id: 'skipPrivate', name: 'skipPrivate', on: calendar.skipPrivate,
+    }) }}
+    {{ forms.textField({
+      label: 'Only events with'|t('calendar-sync'),
+      instructions: 'Words or categories, separated by commas. Only events that have one of them in the title, the description, the location or a category come to Craft. Empty = all events.'|t('calendar-sync'),
+      id: 'filterInclude', name: 'filterInclude', maxlength: 1000,
+      value: calendar.filterInclude, errors: calendar.getErrors('filterInclude'),
+    }) }}
+    {{ forms.textField({
+      label: 'No events with'|t('calendar-sync'),
+      instructions: 'Words or categories, separated by commas. Events that have one of them stay out.'|t('calendar-sync'),
+      id: 'filterExclude', name: 'filterExclude', maxlength: 1000,
+      value: calendar.filterExclude, errors: calendar.getErrors('filterExclude'),
+    }) }}
+
+    <hr>
     <h2>{{ 'Entries and fields'|t('calendar-sync') }}</h2>
     <p class="light cs-lead">{{ 'Events can become entries of one of your sections – and entries can become events. Say which field of the entry holds what. Without a section the events are kept by the plugin and can still be shown with Twig and the feeds.'|t('calendar-sync') }}</p>
 
@@ -360,7 +382,11 @@
           data-action="calendar-sync/calendars/sync" data-param="force" data-value="1"
           data-redirect="{{ ('calendar-sync/calendars/' ~ calendar.id)|hash }}"
           title="{{ 'Writes every entry again from its event – after you changed the mapping.'|t('calendar-sync') }}">{{ 'Sync everything again'|t('calendar-sync') }}</button>
+        <button type="button" class="btn formsubmit" data-icon="search"
+          data-action="calendar-sync/calendars/preview"
+          title="{{ 'Shows what the next run would do with the calendar as it is saved. Nothing is written.'|t('calendar-sync') }}">{{ 'Trial run'|t('calendar-sync') }}</button>
       {% endif %}
+      <a class="btn" href="{{ url('calendar-sync/log', { calendar: calendar.handle }) }}">{{ 'Show the log'|t('calendar-sync') }}</a>
       <button type="button" class="btn formsubmit error"
         data-action="calendar-sync/calendars/delete"
         data-redirect="{{ 'calendar-sync/calendars'|hash }}"

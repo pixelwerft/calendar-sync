@@ -1,0 +1,93 @@
+{# The log: what every run of a calendar did – when, what started it, the numbers, the single changes, and what
+   went wrong. #}
+{% extends '_layouts/cp' %}
+{% do view.registerAssetBundle('pixelwerft\\calendarsync\\web\\assets\\cp\\CalendarSyncAsset') %}
+
+{% set title = 'Log'|t('calendar-sync') %}
+{% set selectedSubnavItem = 'log' %}
+{% set params = { calendar: calendar ? calendar.handle : null, status: status } %}
+
+{% block content %}
+  <div class="cs">
+    <form method="get" class="cs-filters" accept-charset="UTF-8">
+      <div class="select">
+        <select name="calendar" aria-label="{{ 'Calendar'|t('calendar-sync') }}" onchange="this.form.submit()">
+          <option value="">{{ 'All calendars'|t('calendar-sync') }}</option>
+          {% for item in calendars %}
+            <option value="{{ item.handle }}" {{ calendar and item.id == calendar.id ? 'selected' }}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="select">
+        <select name="status" aria-label="{{ 'Status'|t('calendar-sync') }}" onchange="this.form.submit()">
+          <option value="">{{ 'All runs'|t('calendar-sync') }}</option>
+          <option value="error" {{ status == 'error' ? 'selected' }}>{{ 'Only runs with errors'|t('calendar-sync') }}</option>
+          <option value="ok" {{ status == 'ok' ? 'selected' }}>{{ 'Only runs without errors'|t('calendar-sync') }}</option>
+        </select>
+      </div>
+      <span class="light">{{ '{n, plural, =0{No runs} =1{# run} other{# runs}}'|t('calendar-sync', { n: total }) }}</span>
+    </form>
+
+    {% if runs|length %}
+      <table class="data fullwidth cs-table cs-log">
+        <thead>
+          <tr>
+            <th scope="col">{{ 'When'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Calendar'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Started'|t('calendar-sync') }}</th>
+            <th scope="col">{{ 'Result'|t('calendar-sync') }}</th>
+            <th scope="col" class="cs-num">{{ 'Took'|t('calendar-sync') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+            {% set runCalendar = run.calendar %}
+            <tr>
+              <th scope="row">
+                <span class="status {{ run.isOk ? 'live' : 'expired' }}" role="img" aria-label="{{ run.isOk ? 'Without errors'|t('calendar-sync') : 'With errors'|t('calendar-sync') }}"></span>
+                {{ run.dateStarted|datetime('short') }}
+              </th>
+              <td>
+                {% if runCalendar %}
+                  <span class="cs-dot" {% if runCalendar.color %}style="background: {{ runCalendar.color }}"{% endif %}></span><a href="{{ runCalendar.cpEditUrl }}">{{ runCalendar.name }}</a>
+                {% endif %}
+              </td>
+              <td>{{ run.triggerLabel }}</td>
+              <td>
+                {{ run.summary }}
+                {% for problem in run.problems %}
+                  <div class="error cs-message">{{ problem }}</div>
+                {% endfor %}
+                {% if run.changes|length %}
+                  <details class="cs-changes">
+                    <summary>{{ '{n, plural, =1{Show # change} other{Show # changes}}'|t('calendar-sync', { n: run.changes|length }) }}</summary>
+                    {% include 'calendar-sync/log/_changes' with { changes: run.changes } only %}
+                  </details>
+                {% endif %}
+              </td>
+              <td class="cs-num">{{ '{n} s'|t('calendar-sync', { n: (run.duration / 1000)|number(1) }) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if pages > 1 %}
+        <nav class="cs-pager" aria-label="{{ 'Pages'|t('calendar-sync') }}">
+          {% if page > 1 %}<a class="btn small" href="{{ url('calendar-sync/log', params|merge({ page: page - 1 })) }}">{{ 'Back'|t('calendar-sync') }}</a>{% endif %}
+          <span class="light">{{ 'Page {page} of {pages}'|t('calendar-sync', { page: page, pages: pages }) }}</span>
+          {% if page < pages %}<a class="btn small" href="{{ url('calendar-sync/log', params|merge({ page: page + 1 })) }}">{{ 'Next'|t('calendar-sync') }}</a>{% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p>{{ 'No runs here yet. Every run of a calendar leaves a line.'|t('calendar-sync') }}</p>
+    {% endif %}
+
+    <p class="light small">
+      {% if logDays > 0 %}
+        {{ '{n, plural, =1{Runs are kept for # day.} other{Runs are kept for # days.}}'|t('calendar-sync', { n: logDays }) }}
+      {% else %}
+        {{ 'The log is switched off in the settings.'|t('calendar-sync') }}
+      {% endif %}
+    </p>
+  </div>
+{% endblock %}

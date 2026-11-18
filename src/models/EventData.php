@@ -49,6 +49,16 @@ class EventData
      */
     public array $attachments = [];
 
+    /** Marked as private or confidential in the calendar. A calendar can leave such events out. */
+    public bool $private = false;
+
+    /**
+     * The categories of the event, where the calendar has them (Outlook, iCalendar). Only used by the filters.
+     *
+     * @var string[]
+     */
+    public array $categories = [];
+
     /** The event does not block its time («show as free»). Only matters to a connection that shows busy times. */
     public bool $free = false;
 

@@ -141,6 +141,17 @@ abstract class Schema
                     'type' => Type::listOf(self::attachmentType()),
                     'description' => 'Documents attached to the event, e.g. files from Google Drive.',
                 ],
+                'addToCalendarUrl' => [
+                    'type' => Type::string(),
+                    'description' => 'The address that puts the event into a visitor’s calendar.',
+                    'args' => ['type' => ['type' => Type::string(), 'description' => '`google`, `outlook`, `office365` or `ics` (the default).']],
+                    'resolve' => static fn(Event $event, array $arguments) => $event->getAddToCalendarUrl((string)($arguments['type'] ?? 'ics')),
+                ],
+                'jsonLd' => [
+                    'type' => Type::string(),
+                    'description' => 'The event as structured data (schema.org), as JSON.',
+                    'resolve' => static fn(Event $event) => json_encode($event->getJsonLd(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ],
                 'calendar' => ['type' => self::calendarType(), 'resolve' => static fn(Event $event) => $event->getCalendar()],
                 'entryId' => ['type' => Type::int()],
                 'entry' => [

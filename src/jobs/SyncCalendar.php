@@ -4,6 +4,7 @@ namespace pixelwerft\calendarsync\jobs;
 
 use craft\queue\BaseJob;
 use pixelwerft\calendarsync\CalendarSync;
+use pixelwerft\calendarsync\models\Run;
 
 /**
  * One run of a calendar.
@@ -14,6 +15,9 @@ class SyncCalendar extends BaseJob
 
     /** Write every entry again, also for events that did not change. */
     public bool $force = false;
+
+    /** What put the run on the queue, for the log. */
+    public string $trigger = Run::TRIGGER_MANUAL;
 
     /**
      * @inheritdoc
@@ -28,7 +32,7 @@ class SyncCalendar extends BaseJob
             return;
         }
         // Errors are kept with the calendar and shown there; a failed job would only be run again and again
-        $plugin->sync->syncCalendar($calendar, $this->force);
+        $plugin->sync->syncCalendar($calendar, $this->force, $this->trigger);
     }
 
     /**

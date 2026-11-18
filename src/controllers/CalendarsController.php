@@ -9,7 +9,9 @@ use pixelwerft\calendarsync\CalendarSync;
 use pixelwerft\calendarsync\errors\ProviderException;
 use pixelwerft\calendarsync\models\Calendar;
 use pixelwerft\calendarsync\models\EventData;
+use pixelwerft\calendarsync\models\Run;
 use pixelwerft\calendarsync\models\Settings;
+use pixelwerft\calendarsync\models\SyncResult;
 use pixelwerft\calendarsync\services\Mapper;
 use Throwable;
 use yii\web\ForbiddenHttpException;
@@ -147,6 +149,7 @@ class CalendarsController extends Controller
         $signature = static fn(Calendar $c) => [
             $c->sectionId, $c->entryTypeId, $c->mapping, $c->direction,
             $c->entryPrefix, $c->descriptionLineBreaks, $c->descriptionDocuments,
+            $c->skipPrivate, $c->filterInclude, $c->filterExclude,
         ];
         $before = $calendar->id ? $signature($calendar) : null;
 
@@ -173,6 +176,9 @@ class CalendarsController extends Controller
         $calendar->descriptionLineBreaks = (bool)$request->getBodyParam('descriptionLineBreaks');
         $calendar->descriptionDocuments = (bool)$request->getBodyParam('descriptionDocuments');
         $calendar->descriptionLinks = (bool)$request->getBodyParam('descriptionLinks');
+        $calendar->skipPrivate = (bool)$request->getBodyParam('skipPrivate');
+        $calendar->filterInclude = trim((string)$request->getBodyParam('filterInclude')) ?: null;
+        $calendar->filterExclude = trim((string)$request->getBodyParam('filterExclude')) ?: null;
         // entries made from events belong to whoever set the calendar up
         $calendar->authorId ??= Craft::$app->getUser()->getId();
 
@@ -193,7 +199,7 @@ class CalendarsController extends Controller
         if ($calendar->enabled) {
             // a new mapping only reaches the entries that exist if every one of them is written again
             $remapped = $before !== null && $before !== $signature($calendar);
-            $plugin->sync->queue($calendar, $remapped, true);
+            $plugin->sync->queue($calendar, $remapped, true, Run::TRIGGER_SAVE);
         }
 
         return $this->asModelSuccess($calendar, CalendarSync::t('Calendar saved. The sync has been started.'), 'calendar');
@@ -218,11 +224,36 @@ class CalendarsController extends Controller
         }
 
         foreach ($calendars as $calendar) {
-            $plugin->sync->queue($calendar, $force, true);
+            $plugin->sync->queue($calendar, $force, true, Run::TRIGGER_MANUAL);
         }
         $this->setSuccessFlash(CalendarSync::t('{n, plural, =0{No calendar to sync.} =1{The sync has been started.} other{The sync of # calendars has been started.}}', ['n' => count($calendars)]));
 
         return $this->redirectToPostedUrl();
+    }
+
+    /**
+     * A trial run: what the next run of the calendar would do, as it is saved – without writing anything, here or
+     * in the calendar.
+     */
+    public function actionPreview(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission(CalendarSync::PERMISSION_SYNC);
+        $plugin = CalendarSync::$plugin;
+        $calendar = $plugin->calendars->getCalendarById((int)$this->request->getBodyParam('calendarId'));
+        if ($calendar === null) {
+            throw new NotFoundHttpException('Calendar not found');
+        }
+
+        $result = $plugin->sync->syncCalendar($calendar, false, Run::TRIGGER_MANUAL, true);
+        $labels = SyncResult::actionLabels();
+
+        return $this->renderTemplate('calendar-sync/calendars/_preview', [
+            'calendar' => $calendar,
+            'result' => $result,
+            'changes' => array_map(static fn(array $change) => $change + ['label' => $labels[$change['action']] ?? $change['action']], $result->changes),
+            'canSync' => true,
+        ]);
     }
 
     public function actionDelete(): Response

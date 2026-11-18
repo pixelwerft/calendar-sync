@@ -7,10 +7,12 @@ use craft\base\Model;
 use craft\base\Plugin;
 use craft\events\ElementEvent;
 use craft\events\RegisterComponentTypesEvent;
+use craft\events\RegisterCpAlertsEvent;
 use craft\events\RegisterGqlQueriesEvent;
 use craft\events\RegisterGqlSchemaComponentsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
+use craft\helpers\Cp;
 use craft\helpers\UrlHelper;
 use craft\services\Dashboard;
 use craft\services\Elements;
@@ -25,7 +27,9 @@ use pixelwerft\calendarsync\services\Calendars;
 use pixelwerft\calendarsync\services\Connections;
 use pixelwerft\calendarsync\services\Events;
 use pixelwerft\calendarsync\services\Mapper;
+use pixelwerft\calendarsync\services\Notifier;
 use pixelwerft\calendarsync\services\Providers;
+use pixelwerft\calendarsync\services\Runs;
 use pixelwerft\calendarsync\services\Sync;
 use pixelwerft\calendarsync\variables\CalendarSyncVariable;
 use pixelwerft\calendarsync\widgets\Agenda;
@@ -44,6 +48,8 @@ use yii\base\Event;
  * @property-read Mapper $mapper
  * @property-read Sync $sync
  * @property-read Blueprint $blueprint
+ * @property-read Runs $runs
+ * @property-read Notifier $notifier
  * @method Settings getSettings()
  */
 class CalendarSync extends Plugin
@@ -54,7 +60,7 @@ class CalendarSync extends Plugin
 
     public static CalendarSync $plugin;
 
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.1.0';
     public bool $hasCpSettings = true;
     public bool $hasCpSection = true;
 
@@ -69,6 +75,8 @@ class CalendarSync extends Plugin
                 'mapper' => Mapper::class,
                 'sync' => Sync::class,
                 'blueprint' => Blueprint::class,
+                'runs' => Runs::class,
+                'notifier' => Notifier::class,
             ],
         ];
     }
@@ -93,6 +101,7 @@ class CalendarSync extends Plugin
             return;
         }
         $this->registerEntryListeners();
+        $this->registerAlerts();
         Craft::$app->onInit(function() {
             $this->queueDueCalendars();
         });
@@ -121,6 +130,7 @@ class CalendarSync extends Plugin
         $item['subnav'] = [
             'calendars' => ['label' => self::t('Calendars'), 'url' => 'calendar-sync/calendars'],
             'events' => ['label' => self::t('Events'), 'url' => 'calendar-sync/events'],
+            'log' => ['label' => self::t('Log'), 'url' => 'calendar-sync/log'],
         ];
         // the providers and their connections live in the settings – also where admin changes are switched off
         if ($user->getIsAdmin() || $user->checkPermission(self::PERMISSION_CONNECTIONS)) {
@@ -148,6 +158,20 @@ class CalendarSync extends Plugin
         return Craft::$app->getResponse()->redirect(UrlHelper::cpUrl('calendar-sync/settings'));
     }
 
+    /**
+     * What is due once a day: the log lets go of what is too old, and the Microsoft client secret is looked at.
+     */
+    public function daily(bool $force = false): void
+    {
+        $cache = Craft::$app->getCache();
+        if (!$force && $cache->get('calendar-sync:daily')) {
+            return;
+        }
+        $cache->set('calendar-sync:daily', true, 86400);
+        $this->runs->prune();
+        $this->notifier->checkSecret();
+    }
+
     private function registerUrlRules(): void
     {
         Event::on(UrlManager::class, UrlManager::EVENT_REGISTER_CP_URL_RULES, function(RegisterUrlRulesEvent $event) {
@@ -156,6 +180,7 @@ class CalendarSync extends Plugin
             $event->rules['calendar-sync/calendars/new'] = 'calendar-sync/calendars/edit';
             $event->rules['calendar-sync/calendars/<calendarId:\d+>'] = 'calendar-sync/calendars/edit';
             $event->rules['calendar-sync/events'] = 'calendar-sync/events/index';
+            $event->rules['calendar-sync/log'] = 'calendar-sync/log/index';
             $event->rules['calendar-sync/settings'] = 'calendar-sync/settings/index';
             $event->rules['calendar-sync/connections'] = 'calendar-sync/connections/index';
             $event->rules['calendar-sync/connections/new'] = 'calendar-sync/connections/edit';
@@ -166,6 +191,7 @@ class CalendarSync extends Plugin
 
         Event::on(UrlManager::class, UrlManager::EVENT_REGISTER_SITE_URL_RULES, function(RegisterUrlRulesEvent $event) {
             $event->rules['calendar-sync/feed/<token:[A-Za-z0-9_-]+>.<format:(ics|json)>'] = 'calendar-sync/feed/index';
+            $event->rules['calendar-sync/event/<uid:[a-f0-9-]{36}>/<signature:[a-f0-9]+>.ics'] = 'calendar-sync/feed/event';
         });
     }
 
@@ -234,6 +260,23 @@ class CalendarSync extends Plugin
     }
 
     /**
+     * A notice on top of the control panel while a calendar fails, a connection needs its account again, or the
+     * Microsoft client secret is about to run out.
+     */
+    private function registerAlerts(): void
+    {
+        Event::on(Cp::class, Cp::EVENT_REGISTER_ALERTS, function(RegisterCpAlertsEvent $event) {
+            try {
+                foreach ($this->notifier->alerts() as $alert) {
+                    $event->alerts[] = $alert;
+                }
+            } catch (Throwable $e) {
+                Craft::error('Alerts: ' . $e->getMessage(), 'calendar-sync');
+            }
+        });
+    }
+
+    /**
      * Craft has no clock of its own: while people use the site, the plugin looks once a minute whether a calendar
      * is due and puts it on the queue. Sites without visitors at night use the console command in a cron job.
      */
@@ -254,6 +297,7 @@ class CalendarSync extends Plugin
             }
             $cache->set('calendar-sync:checked', true, 60);
             $this->sync->queueDue();
+            $this->daily();
         } catch (Throwable $e) {
             Craft::error('Due calendars not queued: ' . $e->getMessage(), 'calendar-sync');
         }

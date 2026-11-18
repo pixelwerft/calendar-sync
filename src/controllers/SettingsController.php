@@ -3,6 +3,7 @@
 namespace pixelwerft\calendarsync\controllers;
 
 use Craft;
+use craft\helpers\DateTimeHelper;
 use craft\web\Controller;
 use pixelwerft\calendarsync\CalendarSync;
 use pixelwerft\calendarsync\models\Settings;
@@ -68,6 +69,11 @@ class SettingsController extends Controller
         // what the config file sets cannot be changed here
         $overridden = array_keys(Craft::$app->getConfig()->getConfigFromFile($plugin->id));
         $posted = array_diff_key($posted, array_flip($overridden));
+        if (isset($posted['microsoftSecretExpires']) && is_array($posted['microsoftSecretExpires'])) {
+            // the date field posts a date and a time zone; the setting is the day
+            $date = DateTimeHelper::toDateTime($posted['microsoftSecretExpires']);
+            $posted['microsoftSecretExpires'] = $date ? $date->format('Y-m-d') : '';
+        }
 
         if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $posted)) {
             $this->setFailFlash(Craft::t('app', 'Couldn’t save plugin settings.'));

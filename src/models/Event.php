@@ -5,6 +5,8 @@ namespace pixelwerft\calendarsync\models;
 use Craft;
 use craft\base\Model;
 use craft\elements\Entry;
+use craft\helpers\Template;
+use craft\helpers\UrlHelper;
 use DateTime;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -165,6 +167,130 @@ class Event extends Model
         }
 
         return $html;
+    }
+
+    /**
+     * The address of a page or a file that puts this event into a visitor's own calendar.
+     *
+     * @param string $type `google`, `outlook` (Outlook.com), `office365`, or `ics` – a file every calendar app opens
+     */
+    public function getAddToCalendarUrl(string $type = 'ics'): ?string
+    {
+        $utc = new DateTimeZone('UTC');
+        $details = Text::fromHtml((string)$this->description);
+        $link = $this->getEntry()?->getUrl() ?? $this->url;
+        if ($link) {
+            $details = trim($details . "\n\n" . $link);
+        }
+        $details = mb_substr($details, 0, 1500);
+
+        switch ($type) {
+            case 'google':
+                $dates = $this->allDay
+                    ? $this->startDate->format('Ymd') . '/' . $this->getExclusiveEnd()->format('Ymd')
+                    : (clone $this->startDate)->setTimezone($utc)->format('Ymd\THis\Z') . '/' . (clone $this->endDate)->setTimezone($utc)->format('Ymd\THis\Z');
+
+                return 'https://calendar.google.com/calendar/render?' . http_build_query(array_filter([
+                    'action' => 'TEMPLATE',
+                    'text' => $this->title,
+                    'dates' => $dates,
+                    'details' => $details,
+                    'location' => (string)$this->location,
+                ], static fn(string $value) => $value !== ''), '', '&', PHP_QUERY_RFC3986);
+            case 'outlook':
+            case 'office365':
+                $host = $type === 'outlook' ? 'outlook.live.com' : 'outlook.office.com';
+
+                return 'https://' . $host . '/calendar/0/action/compose?' . http_build_query(array_filter([
+                    'rru' => 'addevent',
+                    'subject' => $this->title,
+                    'startdt' => $this->allDay ? $this->startDate->format('Y-m-d') : (clone $this->startDate)->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
+                    'enddt' => $this->allDay ? $this->getExclusiveEnd()->format('Y-m-d') : (clone $this->endDate)->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
+                    'allday' => $this->allDay ? 'true' : 'false',
+                    'body' => $details,
+                    'location' => (string)$this->location,
+                ], static fn(string $value) => $value !== ''), '', '&', PHP_QUERY_RFC3986);
+            case 'ics':
+                return $this->uid ? UrlHelper::siteUrl(sprintf('calendar-sync/event/%s/%s.ics', $this->uid, self::signature($this->uid))) : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * The links that put this event into a visitor's calendar, ready for a list or a menu.
+     *
+     * @return array<string, array{label: string, url: string}>
+     */
+    public function getAddToCalendarLinks(): array
+    {
+        $links = [];
+        foreach (['google' => 'Google Calendar', 'outlook' => 'Outlook.com', 'office365' => 'Microsoft 365', 'ics' => CalendarSync::t('Calendar file (.ics)')] as $type => $label) {
+            $url = $this->getAddToCalendarUrl($type);
+            if ($url !== null) {
+                $links[$type] = ['label' => $label, 'url' => $url];
+            }
+        }
+
+        return $links;
+    }
+
+    /**
+     * What makes the address of the calendar file of an event valid: only addresses the site itself has handed out
+     * work, so nobody can fetch events by guessing.
+     */
+    public static function signature(string $uid): string
+    {
+        return substr(hash_hmac('sha256', 'calendar-sync:event:' . $uid, Craft::$app->getConfig()->getGeneral()->securityKey), 0, 24);
+    }
+
+    /**
+     * The event as structured data (schema.org), for search engines.
+     *
+     * @return array<string, mixed>
+     */
+    public function getJsonLd(): array
+    {
+        $data = [
+            '@context' => 'https://schema.org',
+            '@type' => 'Event',
+            'name' => $this->title,
+            'startDate' => $this->allDay ? $this->startDate->format('Y-m-d') : $this->startDate->format(DATE_ATOM),
+            'endDate' => $this->allDay ? $this->endDate->format('Y-m-d') : $this->endDate->format(DATE_ATOM),
+            'eventStatus' => $this->getIsCancelled() ? 'https://schema.org/EventCancelled' : 'https://schema.org/EventScheduled',
+        ];
+        $description = Text::singleLine((string)$this->description);
+        if ($description !== '') {
+            $data['description'] = mb_substr($description, 0, 5000);
+        }
+        if ((string)$this->location !== '') {
+            $data['location'] = ['@type' => 'Place', 'name' => $this->location];
+        }
+        $url = $this->getEntry()?->getUrl() ?? $this->url;
+        if ($url) {
+            $data['url'] = $url;
+        }
+
+        return $data;
+    }
+
+    /**
+     * The structured data as a script tag for the head or body of a page.
+     */
+    public function getJsonLdScript(): \Twig\Markup
+    {
+        return self::jsonLdScript($this->getJsonLd());
+    }
+
+    /**
+     * @param array<int|string, mixed> $data
+     */
+    public static function jsonLdScript(array $data): \Twig\Markup
+    {
+        // the hex flags keep a title like «</script>» from ending the tag
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+
+        return Template::raw('<script type="application/ld+json">' . $json . '</script>');
     }
 
     /**

@@ -93,6 +93,8 @@ class Install extends Migration
             'uid' => $this->uid(),
         ]);
 
+        self::createRunsTable($this);
+
         $this->createIndex(null, Table::CALENDARS, ['handle'], true);
         $this->createIndex(null, Table::CALENDARS, ['feedToken']);
         $this->createIndex(null, Table::CALENDARS, ['sectionId']);
@@ -114,10 +116,39 @@ class Install extends Migration
     }
 
     /**
+     * The log: one row per run of a calendar. Shared with the migration that adds it to sites installed before 1.1.
+     */
+    public static function createRunsTable(Migration $migration): void
+    {
+        if ($migration->db->tableExists(Table::RUNS)) {
+            return;
+        }
+        $migration->createTable(Table::RUNS, [
+            'id' => $migration->primaryKey(),
+            'calendarId' => $migration->integer()->notNull(),
+            // what started the run: schedule, manual, save, console, entry
+            'trigger' => $migration->string(20)->notNull()->defaultValue('manual'),
+            'status' => $migration->string(10)->notNull()->defaultValue('ok'),
+            'dateStarted' => $migration->dateTime()->notNull(),
+            // milliseconds
+            'duration' => $migration->integer()->notNull()->defaultValue(0),
+            // the numbers, the errors and the single changes of the run, as JSON
+            'result' => $migration->mediumText(),
+            'dateCreated' => $migration->dateTime()->notNull(),
+            'dateUpdated' => $migration->dateTime()->notNull(),
+            'uid' => $migration->uid(),
+        ]);
+        $migration->createIndex(null, Table::RUNS, ['calendarId', 'dateStarted']);
+        $migration->createIndex(null, Table::RUNS, ['dateStarted']);
+        $migration->addForeignKey(null, Table::RUNS, ['calendarId'], Table::CALENDARS, ['id'], 'CASCADE');
+    }
+
+    /**
      * @inheritdoc
      */
     public function safeDown(): bool
     {
+        $this->dropTableIfExists(Table::RUNS);
         $this->dropTableIfExists(Table::EVENTS);
         $this->dropTableIfExists(Table::CALENDARS);
         $this->dropTableIfExists(Table::CONNECTIONS);

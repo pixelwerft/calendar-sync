@@ -41,6 +41,13 @@ them with Twig, an iCalendar feed and a JSON feed.
   turn web addresses into links.
 - **Dashboard widgets** – a counter (calendars, events, today, the next seven days) and an events widget with a day,
   week and month view.
+- **A log and a trial run** – every run leaves a line with what it did, change by change; a trial run shows what
+  the next run would do without writing anything.
+- **Filters** – leave out private events, or only take events with certain words or categories.
+- **Told when something breaks** – a notice in the control panel and, if you like, an e-mail when a calendar fails
+  or the Microsoft client secret is about to run out.
+- **Add to calendar and structured data** – links that put an event into a visitor's Google, Outlook or other
+  calendar, and schema.org data for search engines.
 - **For operations** – console commands for a cron job, a queue job per run, user permissions, the result of the last
   run on every calendar. Tokens and passwords are stored encrypted.
 - Interface in English, German (with Swiss spelling), French, Italian and Spanish.
@@ -148,6 +155,18 @@ Every connection has an access level; it applies to all of its calendars.
 Changing the access of a connection reads its calendars again from the start. A connection that shall write after it
 only read has to sign in again.
 
+### Filters
+
+Each calendar can say which of its events come to Craft (*Filters* in the calendar form):
+
+- **Leave out private events** – what is marked as private or confidential in the calendar stays there.
+- **Only events with** – words or categories, separated by commas. An event needs one of them in its title,
+  description, location or categories (Outlook and iCalendar have categories; Google has none).
+- **No events with** – events that have one of these words stay out.
+
+An event that is left out is treated as if it were not in the calendar: if it was synced before, its entry is
+deleted, disabled or kept – as the calendar is set. Events made from entries are never left out.
+
 ## How the sync works
 
 One run of a calendar looks at the period set for it (days back, days ahead) and
@@ -194,6 +213,27 @@ Good to know:
 - **By hand** – *Sync now* in the control panel.
 - **On save** – an entry of a mapped section goes to its calendar right after it was saved.
 
+### Trial run
+
+*Trial run* on a calendar shows what the next run would do – events and entries that would be created, changed or
+removed, what would be sent to the calendar, conflicts – and writes nothing, neither in Craft nor in the calendar.
+Use it before the first sync in both directions, or after changing the mapping or the filters. It works with the
+calendar as it is saved.
+
+### The log
+
+*Calendar Sync → Log* lists the runs of all calendars: when, what started them, how long they took, the numbers and
+every single change, and what went wrong. Runs are kept for 30 days (*Settings → Sync*; 0 switches the log off).
+
+### Notifications
+
+While a calendar fails or a connection needs its account again, the control panel shows a notice on every page. With
+*Send an e-mail when a calendar fails* (*Settings → Sync*) the plugin also sends one message when a calendar starts
+to fail and one a day while it keeps failing.
+
+Microsoft does not tell an app when its client secret ends. Enter the date next to the secret
+(*Settings → Providers → Microsoft*) and the plugin warns thirty days before.
+
 ### Console commands
 
 ```bash
@@ -202,6 +242,7 @@ php craft calendar-sync/sync team       # one calendar, by its handle
 php craft calendar-sync/sync --all      # every enabled calendar
 php craft calendar-sync/sync --force    # write every entry again (after the mapping changed)
 php craft calendar-sync/sync --queue    # put the runs on the queue instead of running them here
+php craft calendar-sync/sync team --dry-run   # only say what a run would do
 php craft calendar-sync/sync/status     # the calendars and how their last run ended
 ```
 
@@ -258,6 +299,8 @@ An event:
 | `allDay`, `isMultiDay`, `isUpcoming`, `isOngoing`, `isPast`, `duration` | `duration` in minutes |
 | `status`, `isCancelled`, `organizer`, `recurring` | |
 | `calendar` | The calendar: `name`, `handle`, `color`, `entryPrefix`, `feedUrl` |
+| `addToCalendarLinks`, `addToCalendarUrl(type)` | Links that put the event into a visitor's calendar – see below |
+| `jsonLd`, `jsonLdScript` | The event as structured data (schema.org) – see below |
 | `entry` | The mapped entry, if it is live |
 
 If a section is mapped, the events are ordinary entries too – query them the way you query any entry:
@@ -265,6 +308,33 @@ If a section is mapped, the events are ordinary entries too – query them the w
 ```twig
 {% set entries = craft.entries.section('calendarEvents').eventStart('>= now').orderBy('eventStart asc').all() %}
 ```
+
+### Add to calendar
+
+```twig
+<ul>
+  {% for link in event.addToCalendarLinks %}
+    <li><a href="{{ link.url }}" rel="nofollow">{{ link.label }}</a></li>
+  {% endfor %}
+</ul>
+```
+
+The links are for Google Calendar, Outlook.com, Microsoft 365 and a calendar file (`.ics`) that every calendar app
+opens. For a single one: `event.addToCalendarUrl('google')` – `google`, `outlook`, `office365` or `ics`. The address
+of the calendar file carries a signature, so it only works for events a template has linked to.
+
+### Structured data
+
+```twig
+{# one event, e.g. on its detail page #}
+{{ event.jsonLdScript }}
+
+{# a list of events #}
+{{ craft.calendarSync.jsonLd(events) }}
+```
+
+Both write a `<script type="application/ld+json">` tag with schema.org `Event` data: name, start and end, status,
+description, location and the address of the entry.
 
 ### The description
 
@@ -300,6 +370,8 @@ Allow *Calendar Sync → Query the events and calendars* in a schema, then:
   calendarSyncCalendars { handle name color feedUrl }
 }
 ```
+
+An event also has `addToCalendarUrl(type: "google")` and `jsonLd` (as a JSON string).
 
 `calendarSyncEvents`, `calendarSyncEvent` and `calendarSyncEventCount` take `id`, `calendar`, `after`, `before`,
 `upcoming`, `past`, `today`, `day`, `month`, `search`, `allDay`, `recurring`, `hasEntry`, `entryId`, `orderBy`,
@@ -357,6 +429,15 @@ return [
     'defaultEventDuration' => 60,
     // seconds to wait for a provider
     'requestTimeout' => 30,
+
+    // days the log keeps the runs; 0 = no log
+    'logDays' => 30,
+    // an e-mail when a calendar starts to fail, and before the Microsoft client secret runs out
+    'notifyOnError' => false,
+    // who gets it, separated by commas; empty = the address the site sends its mail from
+    'notificationEmails' => '$CRAFT_CALENDAR_SYNC_NOTIFY',
+    // the day the Microsoft client secret runs out, to be warned thirty days before
+    'microsoftSecretExpires' => '2028-11-19',
 ];
 ```
 

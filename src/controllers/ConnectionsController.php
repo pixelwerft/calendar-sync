@@ -8,6 +8,7 @@ use pixelwerft\calendarsync\CalendarSync;
 use pixelwerft\calendarsync\errors\ProviderException;
 use pixelwerft\calendarsync\models\Calendar;
 use pixelwerft\calendarsync\models\Connection;
+use pixelwerft\calendarsync\models\Run;
 use pixelwerft\calendarsync\providers\CalDav;
 use pixelwerft\calendarsync\providers\IcsFeed;
 use yii\web\NotFoundHttpException;
@@ -188,7 +189,7 @@ class ConnectionsController extends Controller
                 $plugin->calendars->saveCalendar($calendar, false);
             }
             if ($before !== null && $before !== $connection->getAccess() && $calendar->enabled && $connection->getIsConnected()) {
-                $plugin->sync->queue($calendar, true, true);
+                $plugin->sync->queue($calendar, true, true, Run::TRIGGER_SAVE);
             }
         }
     }

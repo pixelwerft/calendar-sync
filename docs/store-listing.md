@@ -62,6 +62,10 @@ calendar.
   JSON feed for FullCalendar. A colour and a prefix per calendar; line breaks, attached documents and links in the
   description the way you need them.
 - **Dashboard widgets** – a counter and the events of a day, a week or a month.
+- **A log and a trial run** – see what every run did, change by change, and what the next one would do before it does.
+- **Filters and notifications** – leave out private events or pick events by word and category; a notice and an
+  e-mail when a calendar fails.
+- **Add to calendar and structured data** – links for Google, Outlook and a calendar file, and schema.org data.
 - Console commands for a cron job, queue jobs, permissions, encrypted credentials. Interface in English, German,
   French, Italian and Spanish.
 

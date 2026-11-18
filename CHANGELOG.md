@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.1.0 - 2026-11-19
+
+### Added
+- A log of the runs of every calendar: when, what started them, the numbers, every single change and what went wrong.
+- A trial run that shows what the next run of a calendar would do, without writing anything
+  (`calendar-sync/sync --dry-run` on the console).
+- Filters per calendar: leave out private events, only take events with certain words or categories, or leave those out.
+- A notice in the control panel while a calendar fails or a connection needs attention, and optional e-mails.
+- A warning before the client secret of the Microsoft app runs out, from a date entered in the settings.
+- `event.addToCalendarLinks` and `event.addToCalendarUrl()` for Google Calendar, Outlook.com, Microsoft 365 and a
+  calendar file of the single event.
+- `event.jsonLd`, `event.jsonLdScript` and `craft.calendarSync.jsonLd()` for schema.org structured data.
+- GraphQL: `addToCalendarUrl` and `jsonLd` on events.
+
 ## 1.0.1 - 2026-11-13
 
 ### Fixed

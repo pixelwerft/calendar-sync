@@ -96,6 +96,15 @@ class Calendar extends Model
         $this->entryPrefix = $new !== '' ? $new : null;
     }
 
+    /** Leave out events that are marked as private or confidential in the calendar. */
+    public bool $skipPrivate = false;
+
+    /** Words, separated by commas or lines: only events with one of them come to Craft. Empty = all. */
+    public ?string $filterInclude = null;
+
+    /** Words, separated by commas or lines: events with one of them stay out. */
+    public ?string $filterExclude = null;
+
     /** How the description is shown: keep its line breaks, list attached documents, turn addresses into links. */
     public bool $descriptionLineBreaks = true;
     public bool $descriptionDocuments = true;
@@ -122,6 +131,52 @@ class Calendar extends Model
     public function getEntryType(): ?EntryType
     {
         return $this->entryTypeId ? Craft::$app->getEntries()->getEntryTypeById($this->entryTypeId) : null;
+    }
+
+    public function hasFilters(): bool
+    {
+        return $this->skipPrivate || self::words($this->filterInclude) || self::words($this->filterExclude);
+    }
+
+    /**
+     * Whether an event of the calendar passes the filters. The words are looked for in the title, the description,
+     * the location and the categories; upper and lower case make no difference.
+     */
+    public function accepts(EventData $data): bool
+    {
+        if ($this->skipPrivate && $data->private) {
+            return false;
+        }
+        $text = mb_strtolower(implode("\n", array_merge(
+            [$data->title, (string)$data->description, (string)$data->location],
+            $data->categories,
+        )));
+        foreach (self::words($this->filterExclude) as $word) {
+            if (str_contains($text, $word)) {
+                return false;
+            }
+        }
+        $include = self::words($this->filterInclude);
+        if (!$include) {
+            return true;
+        }
+        foreach ($include as $word) {
+            if (str_contains($text, $word)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function words(?string $list): array
+    {
+        $words = preg_split('~[,\r\n]+~', mb_strtolower((string)$list)) ?: [];
+
+        return array_values(array_filter(array_map('trim', $words), static fn(string $word) => $word !== ''));
     }
 
     /** Events of the calendar come to Craft. */
@@ -265,7 +320,9 @@ class Calendar extends Model
             [['missingBehavior'], 'in', 'range' => [self::MISSING_DELETE, self::MISSING_DISABLE, self::MISSING_KEEP]],
             [['syncInterval'], 'in', 'range' => array_keys(Settings::intervals())],
             [['pastDays', 'futureDays'], 'integer', 'min' => 0, 'max' => 3650],
-            [['enabled', 'feedEnabled', 'descriptionLineBreaks', 'descriptionDocuments', 'descriptionLinks'], 'boolean'],
+            [['enabled', 'feedEnabled', 'descriptionLineBreaks', 'descriptionDocuments', 'descriptionLinks', 'skipPrivate'], 'boolean'],
+            [['filterInclude', 'filterExclude'], 'trim'],
+            [['filterInclude', 'filterExclude'], 'string', 'max' => 1000],
             [['entryPrefix'], 'trim'],
             [['entryPrefix'], 'string', 'max' => 100],
             [['color'], 'match', 'pattern' => '/^#[0-9a-f]{6}$/i', 'message' => CalendarSync::t('Enter a colour like #2d6cdf.')],

@@ -1,0 +1,24 @@
+{# One event with links that put it into the visitor's own calendar, and structured data for search engines.
+   Here the next event of the calendar «team»; on a detail page it would be the event of the entry:
+   craft.calendarSync.events().entryId(entry.id).one() #}
+{% set event = craft.calendarSync.events().calendar('team').upcoming().one() %}
+
+{% if event %}
+  <article class="event">
+    <h2>{{ event.title }}</h2>
+    <p>
+      {{ event.startDate|date('full') }}{% if not event.allDay %}, {{ event.startDate|time('short') }} – {{ event.endDate|time('short') }}{% endif %}
+      {% if event.location %} · {{ event.location }}{% endif %}
+    </p>
+    {% if event.description %}<div>{{ event.descriptionHtml|raw }}</div>{% endif %}
+
+    <p>Add to your calendar:</p>
+    <ul>
+      {% for link in event.addToCalendarLinks %}
+        <li><a href="{{ link.url }}" rel="nofollow">{{ link.label }}</a></li>
+      {% endfor %}
+    </ul>
+  </article>
+
+  {{ event.jsonLdScript }}
+{% endif %}
